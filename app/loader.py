@@ -60,14 +60,14 @@ def load_data():
         current_batch.append(generate_grade_data())
         
         if i % BATCH_SIZE == 0:
-            # 1. MongoDB (RF1) [cite: 13, 171]
+            # 1. MongoDB (RF1) 
             mongo_db.grades.insert_many(current_batch)
             
-            # 2. Cassandra (RF5) [cite: 20, 244]
+            # 2. Cassandra (RF5) 
             for item in current_batch:
                 cassandra_session.execute_async(cass_query, (item['student_id'], item['country'], str(item['grade']), item['timestamp']))
             
-            # 3. Neo4j (RF3) [cite: 16, 208]
+            # 3. Neo4j (RF3) 
             with neo4j_driver.session() as session:
                 session.run("UNWIND $batch AS item MERGE (s:Student {id: item.student_id}) CREATE (s)-[:STUDIED {grade: item.grade}]->(:Subject {name: item.subject})", batch=current_batch)
             

@@ -16,8 +16,5 @@ session.run("CREATE (:Pelicula {titulo: 'Avengers: Infinity War', trama: 'Thanos
 session.run("""MATCH(p:Pelicula {titulo:'Avengers: Infinity War'}), c:Comic {titulo:'Infinity Gauntlet'}
               CREATE (p)-[:BASADA_EN]->(c)""")
 
-session.run("""MATCH(p:Pelicula {titulo:'Avengers: Infinity War'}), pers:Personaje {nombre:'Scarlet Witch'}
-              CREATE (p)-[:APARECE {principal: true}]->(pers)""")
-
 session.close()
 driver.close()
