@@ -25,6 +25,8 @@ parcial2={
     "fecha": "2023-09-20",
     "nota": random.randint(1, 10)
 }
+evaluaciones.append(parcial1)
+evaluaciones.append(parcial2)
 if(parcial1["nota"] < 4 or parcial2["nota"] <4):
     recuperatorio1={
         "tipo": "Recuperatorio",
@@ -37,12 +39,11 @@ final={
     "fecha": "2023-12-10",
     "nota": random.randint(1, 10)
 }
-evaluaciones.append(parcial1)
-evaluaciones.append(parcial2)
+
 evaluaciones.append(final)
 
 materia= {
-    "codigo": random.randint(1000, 9999),
+    "Id_codigo": random.randint(1000, 9999),
     "nombre": "Base de Datos",
     "año_cursada": random.randint(1, 5),
     "estado": "Aprobada",
@@ -70,7 +71,9 @@ estudiante1={
                 "carrera": "Ingeniería en Informática",
                 "ciclo_lectivo": "2025",
                 "estado": "En curso",
-                "materias":materia
+                "materias":[
+                    materia
+                ]
             
                 }
         ],
