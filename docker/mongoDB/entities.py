@@ -1,6 +1,7 @@
 from datetime import date
 import random
 from pymongo import MongoClient
+
 ##Conexión
 uri = "mongodb://root:estudiantes2026@localhost:27017/admin"
 client = MongoClient(uri)
