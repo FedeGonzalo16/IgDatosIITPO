@@ -53,7 +53,9 @@ materia= {
 }
 
 
+
 estudiante1={
+    
     "nombre":"Gonzalo",
     "apellido":"Gomez",
     "edad":random.randint(18, 30),
@@ -82,11 +84,5 @@ estudiante1={
 
 resultado= estudiante.insert_one(estudiante1) 
 print("Estudiante insertado con ID:", resultado.inserted_id)
-
-
-
-
-
-
 #Cerrar conexión
 client.close()
