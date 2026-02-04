@@ -25,7 +25,10 @@ def cargar_estudiante():
         
         return jsonify({
             "mensaje": "Estudiante cargado correctamente",
-            "id_mongo": str(resultado.inserted_id) # Convertimos ObjectId a string
+            "id_mongo": str(resultado.inserted_id),
+            "nombre": datos_recibidos.get('nombre', ''),
+            "apellido": datos_recibidos.get('apellido', ''),
+            "dni": datos_recibidos.get('dni', '')
         }), 201
 
     except Exception as e:
