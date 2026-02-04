@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------
+  # 1. MongoDB: Document Store
+  # -------------------------------------------------------
+  mongodb:
+    image: mongo:latest
+    container_name: edugrade_mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=estudiantes2026
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - edugrade_net
+
+  # -------------------------------------------------------
+  # 2. Neo4j: Graph DB
+  # -------------------------------------------------------
+  neo4j:
+    image: neo4j:5.15.0  # Usamos una versión estable específica
+    container_name: edugrade_neo4j
+    restart: always
+    ports:
+      - "7474:7474" # HTTP Browser
+      - "7687:7687" # Bolt Protocol (Para Python)
+    environment:
+      - NEO4J_AUTH=neo4j/grafos2026
+      # Ajuste de memoria para que no sature tu PC
+      - NEO4J_dbms_memory_pagecache_size=512M
+      - NEO4J_dbms_memory_heap_initial__size=512M
+      - NEO4J_dbms_memory_heap_max__size=1G
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - edugrade_net
+
+  # -------------------------------------------------------
+  # 3. Redis: Key-Value Store
+  # -------------------------------------------------------
+  redis:
+    image: redis:alpine
+    container_name: edugrade_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    # Activamos persistencia AOF para no perder datos si se reinicia
+    command: redis-server --appendonly yes 
+    volumes:
+      - redis_data:/data
+    networks:
+      - edugrade_net
+
+  # -------------------------------------------------------
+  # 4. Cassandra: Wide-Column
+  # -------------------------------------------------------
+ 
+  cassandra:
+    image: cassandra:latest
+    container_name: edugrade_cassandra
+    restart: always
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=EduGradeCluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    networks:
+      - edugrade_net
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(nodetool statusgossip) = running ]"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+
+volumes:
+  mongo_data:
+  neo4j_data:
+  redis_data:
+  cassandra_data:
+
+# Red interna para que se comuniquen entre ellos
+networks:
+  edugrade_net:
+    driver: bridge
