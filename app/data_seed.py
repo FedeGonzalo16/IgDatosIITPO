@@ -56,9 +56,13 @@ def cargar_grafo_completo(tx, datos):
         a.activo = true
 
     // 4. Nodo Materia (Vinculado a su sistema original)
-    MERGE (m:Materia {codigo: $mat_codigo})
-    ON CREATE SET m.nombre = $mat_nombre, 
-                  m.sistema = $inst_sistema
+    MERGE (m:Materia {
+    nombre: $mat_nombre,
+    institucion_id: $inst_id
+            })
+        ON CREATE SET 
+            m.codigo = $mat_codigo,
+            m.sistema = $inst_sistema
 
     // 5. Relación: La materia pertenece a esa institución
     MERGE (m)-[:PERTENECE_A]->(i)
