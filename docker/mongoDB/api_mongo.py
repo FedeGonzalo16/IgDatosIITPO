@@ -34,8 +34,31 @@ def cargar_estudiante():
     except Exception as e:
         return jsonify({"error": f"Error interno: {str(e)}"}), 500
     
+def cargar_institucion():
+
+    datos_recibidos = request.json
     
 
+    if not datos_recibidos or 'nombre' not in datos_recibidos:
+        return jsonify({"error": "El campo 'nombre' es obligatorio"}), 400
+
+    try:
+        db = client["registro_academico"]
+        coleccion_instituciones = db["instituciones"]
+        resultado = coleccion_instituciones.insert_one(datos_recibidos)
+        
+        return jsonify({
+            "mensaje": "Institución cargada correctamente",
+            "id_mongo": str(resultado.inserted_id),
+            "nombre": datos_recibidos.get('nombre', ''),
+            "tipo": datos_recibidos.get('tipo', ''),
+            "direccion": datos_recibidos.get('direccion', '')
+        }), 201
+
+    except Exception as e:
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+
+    
 @app.route('/api/estudiantes/<id_estudiante>', methods=['GET'])
 def obtener_estudiante(id_estudiante):
     try:

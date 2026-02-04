@@ -1,6 +1,7 @@
 from datetime import date
 import random
 from pymongo import MongoClient
+import api_mongo
 ##Conexión
 uri = "mongodb://root:estudiantes2026@localhost:27017/admin"
 client = MongoClient(uri)
@@ -11,6 +12,8 @@ client = MongoClient(uri)
 
 db= client["registro_academico"]
 estudiante=db["estudiantes"]
+instituciones=db["instituciones"]
+materias=db["materias"]
 
 
 evaluaciones=[]
@@ -43,12 +46,8 @@ final={
 evaluaciones.append(final)
 
 materia= {
-    "Id_codigo": random.randint(1000, 9999),
     "nombre": "Base de Datos",
-    "año_cursada": random.randint(1, 5),
-    "estado": "Aprobada",
-    "evaluaciones": evaluaciones
-    
+    "cantidad_evaluaciones": 4,
 }
 
 
@@ -59,29 +58,23 @@ estudiante1={
     "apellido":"Gomez",
     "edad":random.randint(18, 30),
     "dni": random.randint(30000000, 60000000),
-    "carrera":"Ingenieria de Datos",
-    "trayectorias":[
-            {
-                "institucion": "Escuela Técnica N°1",
-                "nivel": "Secundario",
-                "ciclo_lectivo": "2022",
-                "estado": "Finalizado",
-                },
-                {
-                "institucion": "UADE",
-                "nivel": "Universitario",
-                "carrera": "Ingeniería en Informática",
-                "ciclo_lectivo": "2025",
-                "estado": "En curso",
-                "materias":[
-                    materia
-                ]
-            
-                }
-        ],
+
 }
 
-resultado= estudiante.insert_one(estudiante1) 
-print("Estudiante insertado con ID:", resultado.inserted_id)
+institucion1={
+    "nombre": "UADE",
+    "tipo": "Universidad Privada",
+    "direccion": "Lima 7577, C1073 CABA",
+    "email": "info@uade.edu.ar"}
+
+
+
+#cambiar a la API los inserts!!
+
+#tiene que llamar a la funcion cargar_estudiante de api_mongo.py
+api_mongo.cargar_institucion(institucion1)
+api_mongo.cargar_estudiante(estudiante1)
+
+ 
 #Cerrar conexión
 client.close()
