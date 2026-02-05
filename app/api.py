@@ -2,8 +2,10 @@ from flask import Flask, request, jsonify
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from bson import ObjectId, json_util
 from neo4j import GraphDatabase
+import redis
 import json
 import datetime
+import os
 
 app = Flask(__name__)
 
@@ -54,6 +56,27 @@ def sincronizar_grafo(student_id, materia_data, sistema_origen):
         print(f" [Neo4j Error] No se pudo sincronizar grafo: {e}")
 
 # ==========================================
+# CONFIGURACIÓN DE REDIS 
+# ==========================================
+
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis') 
+REDIS_PORT = 6379
+
+try:
+    r = redis.Redis(
+        host=REDIS_HOST, 
+        port=REDIS_PORT, 
+        db=0, 
+        decode_responses=True
+    )
+    # Verificamos conexión
+    r.ping()
+    print(" [Redis] Conexión exitosa (Docker Network).")
+except Exception as e:
+    print(f" [Redis Error] No se pudo conectar: {e}")
+    r = None 
+
+# ==========================================
 # UTILIDADES Y CONFIGURACIÓN
 # ==========================================
 
@@ -68,8 +91,6 @@ def inicializar_indices():
         print(" [Mongo] Índices inicializados.")
     except Exception as e:
         print(f" [Mongo] Alerta índices: {e}")
-
-
 
 # --- ESTUDIANTES ---
 @app.route('/api/estudiantes', methods=['POST'])
