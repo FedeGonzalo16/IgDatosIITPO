@@ -21,6 +21,7 @@ col_estudiantes = db["estudiantes"]
 col_instituciones = db["instituciones"]
 col_calificaciones = db["calificaciones"]
 col_reglas = db["reglas_conversion"]
+col_materias = db["materias"]
 
 # ==========================================
 # CONFIGURACIÓN DE NEO4J (Grafos)
@@ -193,6 +194,24 @@ def obtener_trayectoria_completa(student_id):
         "resumen_grafo": trayectoria_grafo, # Lo que ve Neo4j
         "historial_detalle": parse_json(detalles_mongo) # Lo que ve Mongo
     }), 200
+
+@app.route('/api/materia', methods=['POST'])
+def crear_materia():
+    data = request.json
+    if not data or 'codigoMateria' not in data:
+        return jsonify({"error": "Código de materia obligatorio"}), 400
+    
+    try:
+        
+        res = col_materias.insert_one(data)
+        
+        # Crear el nodo materia en Neo4j
+        with driver_neo4j.session() as session:
+            session.run("MERGE (:Materia {id: $sid})", sid=str(res.inserted_id))
+
+        return jsonify({"msg": "Materia creada", "id": str(res.inserted_id)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- ARRANQUE ---
 if __name__ == '__main__':
