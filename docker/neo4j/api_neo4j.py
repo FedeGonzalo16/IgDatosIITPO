@@ -27,6 +27,7 @@ neo4j_conn = Neo4jConnection(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 # NODOS: INSTITUCIONES
 # ==========================================
 
+# Crear nodo Institución en Neo4j con datos básicos y fecha de creación para mantener un registro de las instituciones educativas en el grafo.
 @app.route('/api/neo4j/instituciones', methods=['POST'])
 def crear_institucion():
     """
@@ -45,7 +46,7 @@ def crear_institucion():
     
     try:
         with neo4j_conn.get_session() as session:
-            result = session.run(
+            session.run(
                 """
                 MERGE (i:Institucion {id_mongo: $id_mongo})
                 SET i.codigo = $codigo,
@@ -63,7 +64,7 @@ def crear_institucion():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener institución por id_mongo desde Neo4j para mostrar detalles de la institución educativa en el grafo.
 @app.route('/api/neo4j/instituciones/<id_mongo>', methods=['GET'])
 def obtener_institucion(id_mongo):
     """
@@ -92,6 +93,7 @@ def obtener_institucion(id_mongo):
 # NODOS: MATERIAS
 # ==========================================
 
+# Crear nodo Materia en Neo4j con datos básicos, fecha de creación y vinculación a institución para mantener un registro de las materias educativas en el grafo.
 @app.route('/api/neo4j/materias', methods=['POST'])
 def crear_materia():
     """
@@ -113,7 +115,7 @@ def crear_materia():
     try:
         with neo4j_conn.get_session() as session:
             # Crear materia
-            result = session.run(
+            session.run(
                 """
                 MERGE (m:Materia {id_mongo: $id_mongo})
                 SET m.codigo = $codigo,
@@ -146,7 +148,7 @@ def crear_materia():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener materia por id_mongo desde Neo4j con su institución para mostrar detalles de la materia educativa y su vinculación institucional en el grafo.
 @app.route('/api/neo4j/materias/<id_mongo>', methods=['GET'])
 def obtener_materia(id_mongo):
     """
@@ -180,6 +182,7 @@ def obtener_materia(id_mongo):
 # NODOS: ESTUDIANTES
 # ==========================================
 
+# Crear nodo Estudiante en Neo4j con datos básicos y fecha de creación para mantener un registro de los estudiantes en el grafo.
 @app.route('/api/neo4j/estudiantes', methods=['POST'])
 def crear_estudiante():
     """
@@ -200,7 +203,7 @@ def crear_estudiante():
     
     try:
         with neo4j_conn.get_session() as session:
-            result = session.run(
+            session.run(
                 """
                 MERGE (e:Estudiante {id_mongo: $id_mongo})
                 SET e.legajo = $legajo,
@@ -223,7 +226,7 @@ def crear_estudiante():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener estudiante por id_mongo desde Neo4j para mostrar detalles del estudiante en el grafo.
 @app.route('/api/neo4j/estudiantes/<id_mongo>', methods=['GET'])
 def obtener_estudiante(id_mongo):
     """
@@ -252,6 +255,7 @@ def obtener_estudiante(id_mongo):
 # RELACIONES: INSCRIPCIÓN
 # ==========================================
 
+# Inscribir un estudiante a una materia creando relación INSCRIPTO_EN con fecha de inscripción y estado para mantener un registro de las inscripciones en el grafo.
 @app.route('/api/neo4j/inscripciones', methods=['POST'])
 def crear_inscripcion():
     """
@@ -259,8 +263,7 @@ def crear_inscripcion():
     {
         "estudiante_id_mongo": "507f1f77bcf86cd799439013",
         "materia_id_mongo": "507f1f77bcf86cd799439012",
-        "fecha_inscripcion": "2024-01-10",
-        "estado": "ACTIVA"
+        "fecha_inscripcion": "2024-01-10"
     }
     """
     datos = request.json
@@ -276,14 +279,12 @@ def crear_inscripcion():
                 MATCH (m:Materia {id_mongo: $materia_id})
                 MERGE (e)-[r:INSCRIPTO_EN]->(m)
                 SET r.fecha_inscripcion = $fecha_inscripcion,
-                    r.estado = $estado,
                     r.fecha_relacion = datetime()
                 RETURN e, m, r
                 """,
                 estudiante_id=datos['estudiante_id_mongo'],
                 materia_id=datos['materia_id_mongo'],
-                fecha_inscripcion=datos.get('fecha_inscripcion', str(datetime.now().date())),
-                estado=datos.get('estado', 'ACTIVA')
+                fecha_inscripcion=datos.get('fecha_inscripcion', str(datetime.now().date()))
             )
             
             record = result.single()
@@ -293,52 +294,16 @@ def crear_inscripcion():
             return jsonify({
                 "mensaje": "Inscripción creada",
                 "estudiante": record['e']['legajo'],
-                "materia": record['m']['codigo'],
-                "estado": "ACTIVA"
+                "materia": record['m']['codigo']
             }), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/neo4j/inscripciones/<estudiante_id_mongo>/<materia_id_mongo>', methods=['PUT'])
-def actualizar_inscripcion(estudiante_id_mongo, materia_id_mongo):
-    """
-    Actualizar estado de inscripción
-    {
-        "estado": "COMPLETADA" | "CANCELADA" | "ACTIVA"
-    }
-    """
-    datos = request.json
-    
-    if not datos or 'estado' not in datos:
-        return jsonify({"error": "Campo obligatorio: estado"}), 400
-    
-    try:
-        with neo4j_conn.get_session() as session:
-            result = session.run(
-                """
-                MATCH (e:Estudiante {id_mongo: $estudiante_id})-[r:INSCRIPTO_EN]->(m:Materia {id_mongo: $materia_id})
-                SET r.estado = $estado,
-                    r.fecha_actualizacion = datetime()
-                RETURN r
-                """,
-                estudiante_id=estudiante_id_mongo,
-                materia_id=materia_id_mongo,
-                estado=datos['estado']
-            )
-            
-            if not result.single():
-                return jsonify({"error": "Inscripción no encontrada"}), 404
-            
-            return jsonify({"mensaje": "Inscripción actualizada"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 
 # ==========================================
 # RELACIONES: CURSADAS (Materias que cursó)
 # ==========================================
 
+# Registrar que un estudiante cursó una materia creando relación CURSÓ con número de intento, fecha de inicio y estado para mantener un registro de las cursadas en el grafo.
 @app.route('/api/neo4j/cursadas', methods=['POST'])
 def registrar_cursada():
     """
@@ -388,6 +353,7 @@ def registrar_cursada():
         return jsonify({"error": str(e)}), 500
 
 
+# Obtener información de cursada de una materia para un estudiante específico desde Neo4j para mostrar detalles de la cursada en el grafo.
 @app.route('/api/neo4j/cursadas/<estudiante_id_mongo>/<materia_id_mongo>', methods=['GET'])
 def obtener_cursada(estudiante_id_mongo, materia_id_mongo):
     """
@@ -416,7 +382,7 @@ def obtener_cursada(estudiante_id_mongo, materia_id_mongo):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Actualizar estado de cursada para una materia específica de un estudiante en Neo4j para mantener el registro actualizado de la cursada en el grafo.
 @app.route('/api/neo4j/cursadas/<estudiante_id_mongo>/<materia_id_mongo>', methods=['PUT'])
 def actualizar_cursada(estudiante_id_mongo, materia_id_mongo):
     """
@@ -456,6 +422,7 @@ def actualizar_cursada(estudiante_id_mongo, materia_id_mongo):
 # RELACIONES: ESTUDIA_EN
 # ==========================================
 
+# Vincular estudiante con institución donde estudia creando relación ESTUDIA_EN con fecha de inicio para mantener un registro de las instituciones educativas donde estudia cada estudiante en el grafo.
 @app.route('/api/neo4j/estudiantes/<estudiante_id_mongo>/institucion', methods=['POST'])
 def vincular_estudiante_institucion(estudiante_id_mongo):
     """
@@ -503,12 +470,13 @@ def vincular_estudiante_institucion(estudiante_id_mongo):
 # CONSULTAS: TRAYECTORIA
 # ==========================================
 
+# Obtener trayectoria completa del estudiante desde Neo4j incluyendo instituciones donde estudia, materias inscritas y materias cursadas para mostrar un panorama completo de la trayectoria educativa del estudiante en el grafo.
 @app.route('/api/neo4j/estudiantes/<estudiante_id_mongo>/trayectoria', methods=['GET'])
 def obtener_trayectoria_completa(estudiante_id_mongo):
     """
     Obtener trayectoria completa del estudiante:
     - Instituciones donde estudia
-    - Materias inscritas
+    - Materias inscriptas
     - Materias cursadas
     """
     try:
@@ -521,7 +489,7 @@ def obtener_trayectoria_completa(estudiante_id_mongo):
                 OPTIONAL MATCH (e)-[curso:CURSÓ]->(m2:Materia)-[:PERTENECE_A]->(i2)
                 RETURN e, 
                        collect({institucion: i, relacion: estudia}) as instituciones,
-                       collect({materia: m1, relacion: inscripto, tipo: 'INSCRIPTO'}) as inscritos,
+                       collect({materia: m1, relacion: inscripto, tipo: 'INSCRIPTO'}) as inscriptos,
                        collect({materia: m2, relacion: curso, tipo: 'CURSÓ'}) as cursadas
                 """,
                 estudiante_id=estudiante_id_mongo
@@ -534,9 +502,10 @@ def obtener_trayectoria_completa(estudiante_id_mongo):
             
             # Limpiar nulos/None
             instituciones = [x for x in record['instituciones'] if x['institucion']]
-            inscritos = [x for x in record['inscritos'] if x['materia']]
+            inscriptos = [x for x in record['inscritos'] if x['materia']]
             cursadas = [x for x in record['cursadas'] if x['materia']]
             
+            # Construir respuesta con datos del estudiante, instituciones, materias inscritas y cursadas
             respuesta = {
                 "estudiante": dict(record['e']),
                 "instituciones": [
@@ -550,7 +519,7 @@ def obtener_trayectoria_completa(estudiante_id_mongo):
                         "materia": dict(x['materia']),
                         "estado": x['relacion']['estado'],
                         "fecha_inscripcion": x['relacion']['fecha_inscripcion']
-                    } for x in inscritos
+                    } for x in inscriptos
                 ],
                 "materias_cursadas": [
                     {
@@ -571,6 +540,7 @@ def obtener_trayectoria_completa(estudiante_id_mongo):
 # CONSULTAS: ESTADÍSTICAS
 # ==========================================
 
+# Obtener estadísticas generales de estudiantes desde Neo4j para mostrar datos agregados como total de estudiantes, materias más inscriptas y cursadas en el grafo.
 @app.route('/api/neo4j/estadisticas/estudiantes', methods=['GET'])
 def estadisticas_estudiantes():
     """
@@ -578,6 +548,7 @@ def estadisticas_estudiantes():
     """
     try:
         with neo4j_conn.get_session() as session:
+            # Consulta para obtener estadísticas generales de estudiantes, incluyendo total de estudiantes, materias más inscriptas y cursadas.
             result = session.run(
                 """
                 MATCH (e:Estudiante)
@@ -603,7 +574,7 @@ def estadisticas_estudiantes():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener estadísticas de materias más inscriptas y cursadas desde Neo4j para mostrar cuáles son las materias más populares en términos de inscripciones y cursadas en el grafo.
 @app.route('/api/neo4j/estadisticas/materias', methods=['GET'])
 def estadisticas_materias():
     """
@@ -611,6 +582,7 @@ def estadisticas_materias():
     """
     try:
         with neo4j_conn.get_session() as session:
+            # Consulta para obtener estadísticas de materias más inscriptas y cursadas, mostrando código, nombre, cantidad de inscripciones y cursadas.
             result = session.run(
                 """
                 MATCH (m:Materia)
@@ -636,6 +608,7 @@ def estadisticas_materias():
 # LIMPIAR BASE DE DATOS (DESARROLLO)
 # ==========================================
 
+# Elimina todos los datos del grafo en Neo4j
 @app.route('/api/neo4j/limpiar', methods=['DELETE'])
 def limpiar_grafo():
     """

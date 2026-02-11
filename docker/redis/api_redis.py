@@ -73,6 +73,7 @@ def calcular_hash_integridad(datos):
 # CONVERSIONES: GESTIÓN DE REGLAS
 # ==========================================
 
+#Guardar reglas de conversión en Redis para acceso rápido y sincronizar con MongoDB.
 @app.route('/api/redis/conversiones', methods=['POST'])
 def cargar_conversion_en_redis():
     """
@@ -123,7 +124,7 @@ def cargar_conversion_en_redis():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener regla de conversión desde Redis para aplicación rápida en conversiones. 
 @app.route('/api/redis/conversiones/<codigo_regla>', methods=['GET'])
 def obtener_conversion_redis(codigo_regla):
     """
@@ -146,7 +147,7 @@ def obtener_conversion_redis(codigo_regla):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Listar todas las reglas de conversión disponibles en Redis para monitoreo y administración.
 @app.route('/api/redis/conversiones', methods=['GET'])
 def listar_conversiones_redis():
     """
@@ -167,6 +168,7 @@ def listar_conversiones_redis():
                     "ttl": r.ttl(clave)
                 })
         
+        #devolvemos la lista de conversiones con su código, sistemas involucrados y tiempo de vida restante en caché
         return jsonify({
             "total": len(conversiones),
             "conversiones": conversiones
@@ -176,6 +178,7 @@ def listar_conversiones_redis():
         return jsonify({"error": str(e)}), 500
 
 
+#Eliminar una regla de conversión del caché de Redis
 @app.route('/api/redis/conversiones/<codigo_regla>', methods=['DELETE'])
 def eliminar_conversion_redis(codigo_regla):
     """
@@ -197,6 +200,7 @@ def eliminar_conversion_redis(codigo_regla):
 # CONVERSIONES: APLICAR Y REGISTRAR
 # ==========================================
 
+# Aplicar una conversión a una calificación y registrar el resultado en MongoDB, Redis (auditoría) y Cassandra (reportes y auditoría inmutable).
 @app.route('/api/redis/conversiones/aplicar', methods=['POST'])
 def aplicar_conversion():
     """
@@ -319,7 +323,7 @@ def aplicar_conversion():
                 anio_lectivo = datetime.utcnow().year
                 materia_nombre = materia.get('nombre', 'N/A') if materia else 'N/A'
                 
-                # 1. Registrar en reportes_sistemas (conversión effectiveness)
+                # 1. Registrar en reportes_sistemas para cálculos de promedio y estadísticas
                 cassandra_session.execute(
                     f"""
                     UPDATE {CASSANDRA_KEYSPACE}.reportes_sistemas
@@ -353,6 +357,7 @@ def aplicar_conversion():
                     "materia": materia_nombre
                 }
                 
+                #lo persistimos en la tabla de auditoría inmutable con toda la información relevante para trazabilidad y reportes futuros
                 cassandra_session.execute(
                     f"""
                     INSERT INTO {CASSANDRA_KEYSPACE}.registro_auditoria
@@ -369,7 +374,7 @@ def aplicar_conversion():
                      json.dumps(metadata_audit, default=str))
                 )
                 
-                # Indexar por fecha también
+                # Indexamos por fecha también
                 cassandra_session.execute(
                     f"""
                     INSERT INTO {CASSANDRA_KEYSPACE}.auditoria_por_fecha
@@ -396,6 +401,7 @@ def aplicar_conversion():
         return jsonify({"error": str(e)}), 500
 
 
+# Obtener historial de conversiones aplicadas a una calificación desde Redis para auditoría rápida - Ver
 @app.route('/api/redis/conversiones/auditoria/<calificacion_id>', methods=['GET'])
 def obtener_auditoria_conversiones(calificacion_id):
     """
@@ -421,6 +427,7 @@ def obtener_auditoria_conversiones(calificacion_id):
 # SESIONES: GESTIÓN DE ESTUDIANTES
 # ==========================================
 
+# Crear sesión de estudiante en Redis para autenticación rápida y gestión de sesiones activas.
 @app.route('/api/redis/sesiones', methods=['POST'])
 def crear_sesion():
     """
@@ -461,7 +468,7 @@ def crear_sesion():
             json.dumps(sesion_data, default=str)
         )
         
-        # Índice rápido por estudiante
+        # Índice por estudiante
         r.setex(
             f"student_session:{datos['estudiante_id_mongo']}",
             86400,
@@ -478,7 +485,7 @@ def crear_sesion():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener información de sesión activa desde Redis para verificar autenticación y mostrar datos de usuario.
 @app.route('/api/redis/sesiones/<session_id>', methods=['GET'])
 def obtener_sesion(session_id):
     """
@@ -509,7 +516,7 @@ def obtener_sesion(session_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Cerrar sesión eliminando el registro de Redis y el índice por estudiante.
 @app.route('/api/redis/sesiones/<session_id>', methods=['DELETE'])
 def cerrar_sesion(session_id):
     """
@@ -536,7 +543,7 @@ def cerrar_sesion(session_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener sesión activa de un estudiante desde Redis para verificar si tiene sesión iniciada y mostrar datos básicos.
 @app.route('/api/redis/sesiones/estudiante/<estudiante_id_mongo>', methods=['GET'])
 def obtener_sesion_por_estudiante(estudiante_id_mongo):
     """
@@ -559,7 +566,7 @@ def obtener_sesion_por_estudiante(estudiante_id_mongo):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Listar todas las sesiones activas en Redis para monitoreo y administración de sesiones.
 @app.route('/api/redis/sesiones', methods=['GET'])
 def listar_sesiones_activas():
     """
@@ -594,6 +601,7 @@ def listar_sesiones_activas():
 # CACHÉ: DATOS DE ESTUDIANTES
 # ==========================================
 
+#Carga de estudiantes en caché de Redis para acceso rápido a datos básicos y sincronización con MongoDB.
 @app.route('/api/redis/estudiantes/<estudiante_id_mongo>', methods=['POST'])
 def cachear_estudiante(estudiante_id_mongo):
     """
@@ -638,7 +646,7 @@ def cachear_estudiante(estudiante_id_mongo):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener datos de estudiante desde caché de Redis para acceso rápido a información básica sin necesidad de consultar MongoDB.
 @app.route('/api/redis/estudiantes/<estudiante_id_mongo>', methods=['GET'])
 def obtener_estudiante_cache(estudiante_id_mongo):
     """
@@ -661,7 +669,7 @@ def obtener_estudiante_cache(estudiante_id_mongo):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Eliminar datos de estudiante del caché de Redis para forzar actualización desde MongoDB en la próxima consulta.
 @app.route('/api/redis/estudiantes/<estudiante_id_mongo>', methods=['DELETE'])
 def limpiar_cache_estudiante(estudiante_id_mongo):
     """
@@ -683,6 +691,7 @@ def limpiar_cache_estudiante(estudiante_id_mongo):
 # ESTADÍSTICAS Y MONITOREO
 # ==========================================
 
+# Obtener estadísticas de uso de Redis, como número de conversiones en auditoría, sesiones activas y cantidad de estudiantes cacheados para monitoreo del sistema.
 @app.route('/api/redis/estadisticas', methods=['GET'])
 def estadisticas_redis():
     """
@@ -714,33 +723,11 @@ def estadisticas_redis():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-@app.route('/api/redis/salud', methods=['GET'])
-def verificar_salud():
-    """
-    Verificar estado de Redis
-    """
-    try:
-        r.ping()
-        return jsonify({
-            "estado": "OK",
-            "servicio": "Redis",
-            "conectado": True
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "estado": "ERROR",
-            "servicio": "Redis",
-            "conectado": False,
-            "error": str(e)
-        }), 500
-
-
 # ==========================================
 # LIMPIAR CACHE (DESARROLLO)
 # ==========================================
 
-@app.route('/api/redis/limpiar', methods=['DELETE'])
+# Elimina todo el caché de Redis, incluyendo conversiones, sesiones y datos de estudiantes. 
 def limpiar_cache():
     """
     ADVERTENCIA: Limpia todo el caché de Redis

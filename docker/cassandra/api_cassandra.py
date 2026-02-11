@@ -30,6 +30,7 @@ except Exception as e:
 # INICIALIZACIÓN: KEYSPACE Y TABLAS
 # ==========================================
 
+# Crear keyspace y tablas necesarias para auditoría y reportes
 def inicializar_cassandra():
     """
     Crea keyspace y tablas si no existen
@@ -46,7 +47,7 @@ def inicializar_cassandra():
         
         session.set_keyspace(KEYSPACE)
         
-        # Tabla 1: Reportes Geográficos (RF4)
+        # Tabla 1: Reportes Geográficos
         session.execute("""
             CREATE TABLE IF NOT EXISTS reportes_geograficos (
                 region TEXT,
@@ -59,7 +60,7 @@ def inicializar_cassandra():
             ) WITH CLUSTERING ORDER BY (institucion_id ASC, anio_lectivo DESC)
         """)
         
-        # Tabla 2: Reportes por Sistemas (RF4)
+        # Tabla 2: Reportes por Sistemas
         session.execute("""
             CREATE TABLE IF NOT EXISTS reportes_sistemas (
                 sistema_educativo TEXT,
@@ -72,7 +73,7 @@ def inicializar_cassandra():
             )
         """)
         
-        # Tabla 3: Registro de Auditoría (RF5 - Append-only)
+        # Tabla 3: Registro de Auditoría
         session.execute("""
             CREATE TABLE IF NOT EXISTS registro_auditoria (
                 id_estudiante TEXT,
@@ -138,6 +139,7 @@ def inicializar_cassandra():
 # UTILIDADES
 # ==========================================
 
+# Funciones auxiliares para hashing,
 def calcular_hash_integridad(datos):
     """
     Calcula hash SHA256 para integridad de registros
@@ -145,7 +147,7 @@ def calcular_hash_integridad(datos):
     json_str = json.dumps(datos, sort_keys=True, default=str)
     return hashlib.sha256(json_str.encode()).hexdigest()
 
-
+# Función para generar un TIMEUUID basado en la hora actual
 def obtener_timeuuid():
     """
     Obtiene un TIMEUUID actual
@@ -157,6 +159,7 @@ def obtener_timeuuid():
 # ==========================================
 # AUDITORÍA: REGISTRO APPEND-ONLY
 # ==========================================
+
 
 @app.route('/api/cassandra/auditoria', methods=['POST'])
 def registrar_auditoria():
@@ -235,17 +238,17 @@ def registrar_auditoria():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Historial de auditoría de un estudiante (append-only, inmutable)
 @app.route('/api/cassandra/auditoria/estudiante/<estudiante_id>', methods=['GET'])
 def obtener_auditoria_estudiante(estudiante_id):
     """
-    Obtener historial de auditoría de un estudiante (append-only, inmutable)
     Parámetros opcionales: limit, tipo_accion
     """
     if not session:
         return jsonify({"error": "Cassandra no disponible"}), 500
     
     try:
+        # Limitar resultados y filtrar por tipo de acción si se proporciona
         limit = request.args.get('limit', 100, type=int)
         tipo_accion = request.args.get('tipo_accion', None)
         
@@ -289,7 +292,7 @@ def obtener_auditoria_estudiante(estudiante_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Auditoría global por rango de fecha (append-only, inmutable)
 @app.route('/api/cassandra/auditoria', methods=['GET'])
 def obtener_auditoria_global():
     """
@@ -320,6 +323,7 @@ def obtener_auditoria_global():
         
         results = session.execute(query, (dt_inicio, dt_fin, limit))
         
+        # Construir lista de eventos con datos relevantes para auditoría global
         eventos = [
             {
                 "fecha": row.fecha_creacion.isoformat(),
@@ -331,6 +335,7 @@ def obtener_auditoria_global():
             for row in results
         ]
         
+        # Respuesta con total de eventos y detalles para auditoría global
         return jsonify({
             "total_eventos": len(eventos),
             "fecha_inicio": fecha_inicio,
@@ -343,9 +348,10 @@ def obtener_auditoria_global():
 
 
 # ==========================================
-# REPORTES: GEOGRÁFICOS (RF4)
+# REPORTES: GEOGRÁFICOS 
 # ==========================================
 
+# Registrar promedio por región e institución 
 @app.route('/api/cassandra/reportes/geograficos', methods=['POST'])
 def registrar_promedio_geografico():
     """
@@ -383,6 +389,7 @@ def registrar_promedio_geografico():
             (nota, datetime.utcnow(), region, institucion_id, anio_lectivo)
         )
         
+        # Respuesta con mensaje de éxito y detalles del registro
         return jsonify({
             "mensaje": "Promedio registrado",
             "region": region,
@@ -393,7 +400,7 @@ def registrar_promedio_geografico():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Consultar promedios por región
 @app.route('/api/cassandra/reportes/geograficos', methods=['GET'])
 def obtener_reportes_geograficos():
     """
@@ -411,6 +418,7 @@ def obtener_reportes_geograficos():
         if not region:
             return jsonify({"error": "Se requiere parámetro region"}), 400
         
+        # Construir consulta con filtros opcionales para obtener promedios por región, institución y año lectivo
         if institucion_id and anio_lectivo:
             query = f"""
                 SELECT region, institucion_id, anio_lectivo, acumulado_notas, contador_notas
@@ -418,6 +426,7 @@ def obtener_reportes_geograficos():
                 WHERE region = ? AND institucion_id = ? AND anio_lectivo = ?
             """
             results = session.execute(query, (region, institucion_id, anio_lectivo))
+        # Si solo se proporciona institución, filtrar por región e institución
         elif institucion_id:
             query = f"""
                 SELECT region, institucion_id, anio_lectivo, acumulado_notas, contador_notas
@@ -426,6 +435,7 @@ def obtener_reportes_geograficos():
             """
             results = session.execute(query, (region, institucion_id))
         else:
+            # Si solo se proporciona región, obtener todos los registros de esa región para mostrar promedios por institución y año lectivo
             query = f"""
                 SELECT region, institucion_id, anio_lectivo, acumulado_notas, contador_notas
                 FROM {KEYSPACE}.reportes_geograficos
@@ -435,7 +445,9 @@ def obtener_reportes_geograficos():
         
         reportes = []
         for row in results:
+            # Calcular promedio a partir del acumulado y contador, manejando división por cero
             promedio = row.acumulado_notas / row.contador_notas if row.contador_notas > 0 else 0
+            # Agregar reporte a la lista con detalles de región, institución, año lectivo, promedio y total de registros para mostrar en la respuesta
             reportes.append({
                 "region": row.region,
                 "institucion_id": row.institucion_id,
@@ -455,13 +467,13 @@ def obtener_reportes_geograficos():
 
 
 # ==========================================
-# REPORTES: SISTEMAS EDUCATIVOS (RF4)
+# REPORTES: SISTEMAS EDUCATIVOS 
 # ==========================================
 
+# Registrar promedio convertido por sistema educativo 
 @app.route('/api/cassandra/reportes/sistemas', methods=['POST'])
 def registrar_promedio_sistema():
     """
-    Registrar promedio convertido por sistema educativo
     {
         "sistema_educativo": "GB" | "AR" | "US",
         "anio_lectivo": 2024,
@@ -484,6 +496,7 @@ def registrar_promedio_sistema():
         promedio = float(datos['promedio_convertido'])
         
         # Actualizar acumulado
+        # En este caso, como solo guardamos el promedio convertido, actualizamos directamente el valor del promedio y el contador de registros para calcular un promedio general a partir de los promedios individuales registrados por cada sistema educativo, materia y año lectivo.
         session.execute(
             f"""
             UPDATE {KEYSPACE}.reportes_sistemas
@@ -495,6 +508,7 @@ def registrar_promedio_sistema():
             (promedio, datetime.utcnow(), sistema, anio, materia)
         )
         
+        # Respuesta con mensaje de éxito y detalles del registro para mostrar en la respuesta
         return jsonify({
             "mensaje": "Promedio del sistema registrado",
             "sistema": sistema,
@@ -505,7 +519,7 @@ def registrar_promedio_sistema():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Consultar promedios por sistema educativo
 @app.route('/api/cassandra/reportes/sistemas', methods=['GET'])
 def obtener_reportes_sistemas():
     """
@@ -522,7 +536,9 @@ def obtener_reportes_sistemas():
         if not sistema:
             return jsonify({"error": "Se requiere parámetro sistema_educativo"}), 400
         
+        # Construir consulta con filtros opcionales para obtener promedios por sistema educativo y año lectivo, mostrando materia, promedio convertido y total de registros para cada materia registrada en el sistema educativo y año lectivo especificados.
         if anio_lectivo:
+            # Si se proporciona año lectivo, filtramos por sistema educativo y año lectivo para obtener promedios específicos de ese año, mostrando materia, promedio convertido y total de registros para cada materia registrada en el sistema educativo y año lectivo especificados.
             query = f"""
                 SELECT sistema_educativo, anio_lectivo, materia_nombre, promedio_convertido, contador_registros
                 FROM {KEYSPACE}.reportes_sistemas
@@ -530,6 +546,7 @@ def obtener_reportes_sistemas():
             """
             results = session.execute(query, (sistema, anio_lectivo))
         else:
+            # Si no se proporciona año lectivo, obtenemos todos los registros del sistema educativo para mostrar promedios por materia y año lectivo, mostrando materia, promedio convertido y total de registros para cada materia registrada en el sistema educativo especificado.
             query = f"""
                 SELECT sistema_educativo, anio_lectivo, materia_nombre, promedio_convertido, contador_registros
                 FROM {KEYSPACE}.reportes_sistemas
@@ -537,6 +554,7 @@ def obtener_reportes_sistemas():
             """
             results = session.execute(query, (sistema,))
         
+        # Construir lista de reportes con detalles de sistema educativo, año lectivo, materia, promedio convertido y total de registros para mostrar en la respuesta.
         reportes = [
             {
                 "sistema": row.sistema_educativo,
@@ -548,6 +566,7 @@ def obtener_reportes_sistemas():
             for row in results
         ]
         
+        # Respuesta con total de reportes y detalles para comparación entre sistemas educativos
         return jsonify({
             "sistema": sistema,
             "total_materias": len(reportes),
@@ -562,10 +581,10 @@ def obtener_reportes_sistemas():
 # ANALYTICS: TASAS DE APROBACIÓN
 # ==========================================
 
+# Registrar estadística de aprobación por país, nivel educativo y año lectivo
 @app.route('/api/cassandra/analytics/aprobacion', methods=['POST'])
 def registrar_estadistica_aprobacion():
     """
-    Registrar estadística de aprobación
     {
         "pais": "AR",
         "nivel_educativo": "SECUNDARIO",
@@ -606,11 +625,10 @@ def registrar_estadistica_aprobacion():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener tasas de aprobación por país y nivel educativo
 @app.route('/api/cassandra/analytics/aprobacion', methods=['GET'])
 def obtener_estadisticas_aprobacion():
     """
-    Obtener tasas de aprobación por país y nivel
     Parámetros: pais, nivel_educativo, anio_lectivo
     """
     if not session:
@@ -624,7 +642,9 @@ def obtener_estadisticas_aprobacion():
         if not pais or not nivel:
             return jsonify({"error": "Se requieren parámetros pais y nivel_educativo"}), 400
         
+        # Construir consulta con filtros opcionales para obtener estadísticas de aprobación por país, nivel educativo y año lectivo, mostrando total de calificaciones, total de aprobadas, tasa de aprobación en porcentaje y promedio de notas para el país, nivel educativo y año lectivo especificados.
         if anio:
+            # Si se proporciona año lectivo, filtramos por país, nivel educativo y año lectivo para obtener estadísticas específicas de ese año, mostrando total de calificaciones, total de aprobadas, tasa de aprobación en porcentaje y promedio de notas para el país, nivel educativo y año lectivo especificados.
             query = f"""
                 SELECT pais, nivel_educativo, anio_lectivo, total_calificaciones, total_aprobadas, promedio_notas
                 FROM {KEYSPACE}.analytics_aprobacion
@@ -632,6 +652,7 @@ def obtener_estadisticas_aprobacion():
             """
             results = session.execute(query, (pais, nivel, anio))
         else:
+            # Si no se proporciona año lectivo, obtenemos todos los registros del país y nivel educativo para mostrar estadísticas por año lectivo, mostrando total de calificaciones, total de aprobadas, tasa de aprobación en porcentaje y promedio de notas para el país, nivel educativo y cada año lectivo registrado.
             query = f"""
                 SELECT pais, nivel_educativo, anio_lectivo, total_calificaciones, total_aprobadas, promedio_notas
                 FROM {KEYSPACE}.analytics_aprobacion
@@ -640,6 +661,7 @@ def obtener_estadisticas_aprobacion():
             results = session.execute(query, (pais, nivel))
         
         estadisticas = []
+        # Calcular tasa de aprobación en porcentaje para cada registro, manejando división por cero, y agregar a la lista de estadísticas
         for row in results:
             tasa_aprobacion = (row.total_aprobadas / row.total_calificaciones * 100) if row.total_calificaciones > 0 else 0
             estadisticas.append({
@@ -666,10 +688,10 @@ def obtener_estadisticas_aprobacion():
 # ANALYTICS: DISTRIBUCIÓN DE NOTAS
 # ==========================================
 
+# Registrar distribución de notas por rango
 @app.route('/api/cassandra/analytics/distribucion', methods=['POST'])
 def registrar_distribucion_notas():
     """
-    Registrar distribución de notas por rango
     {
         "pais": "AR",
         "nivel_educativo": "SECUNDARIO",
@@ -692,6 +714,7 @@ def registrar_distribucion_notas():
         anio = datos['anio_lectivo']
         rango = datos['rango_nota']
         
+        # Actualizar contador de distribución de notas para el rango especificado, incrementando la cantidad en 1 cada vez que se registre una nota que caiga dentro del rango especificado para el país, nivel educativo y año lectivo correspondientes.
         session.execute(
             f"""
             UPDATE {KEYSPACE}.distribucion_notas
@@ -706,11 +729,10 @@ def registrar_distribucion_notas():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# Obtener distribución de notas por país, nivel educativo y año lectivo
 @app.route('/api/cassandra/analytics/distribucion', methods=['GET'])
 def obtener_distribucion_notas():
     """
-    Obtener distribución de notas
     Parámetros: pais, nivel_educativo, anio_lectivo
     """
     if not session:
@@ -723,7 +745,7 @@ def obtener_distribucion_notas():
         
         if not pais or not nivel:
             return jsonify({"error": "Se requieren parámetros pais y nivel_educativo"}), 400
-        
+        # Construir consulta para obtener distribución de notas por país, nivel educativo y año lectivo
         query = f"""
             SELECT pais, nivel_educativo, anio_lectivo, rango_nota, cantidad
             FROM {KEYSPACE}.distribucion_notas
@@ -736,6 +758,7 @@ def obtener_distribucion_notas():
         total_registros = 0
         
         for row in results:
+            # Sumar la cantidad de registros para calcular el total y luego calcular el porcentaje de cada rango en base al total de registros
             total_registros += row.cantidad
             distribucion.append({
                 "rango": row.rango_nota,
@@ -756,40 +779,6 @@ def obtener_distribucion_notas():
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-# ==========================================
-# MONITOREO Y SALUD
-# ==========================================
-
-@app.route('/api/cassandra/salud', methods=['GET'])
-def verificar_salud():
-    """
-    Verificar estado de Cassandra
-    """
-    if not session:
-        return jsonify({
-            "estado": "ERROR",
-            "servicio": "Cassandra",
-            "conectado": False
-        }), 500
-    
-    try:
-        session.execute("SELECT now() FROM system.local")
-        return jsonify({
-            "estado": "OK",
-            "servicio": "Cassandra",
-            "conectado": True,
-            "keyspace": KEYSPACE
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "estado": "ERROR",
-            "servicio": "Cassandra",
-            "conectado": False,
-            "error": str(e)
-        }), 500
-
 
 # ==========================================
 # INICIALIZACIÓN

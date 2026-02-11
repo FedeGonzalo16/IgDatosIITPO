@@ -1,0 +1,28 @@
+P1: Checkear los entities.py
+P2: Reordenar mongo/ archivos en general
+P3: Resolver anotaciones ----------->
+
+Redis:
+sacar el utccnow() en api_redis
+
+Checkear: Si van los 2 o 1
+
+@app.route('/api/redis/sesiones/estudiante/<estudiante_id_mongo>'
+@app.route('/api/redis/sesiones/<session_id>'
+
+Neo4j:
+sacamos result = en linea 49, no se usa
+linea 82 api_neo
+
+162 porque un OPTIONAL?
+
+el tomar los datos de mongo, porque se hace despues de crear el nodo y sus RELACIONES
+
+504 porque limpiar nulos o none
+
+Cassandra:
+linea 60 institucion_id ASC
+linea 73 - porque no pone WITH CLUSTERING KEY a Reportes por Sistemas
+119 - sentido de Distribucion de Notas
+#Utilidades cheackear si son necesarias - hash integridad
+linea 251 y 252 el sentido
