@@ -1,9 +1,9 @@
 P1: Checkear los entities.py
-P2: Reordenar mongo/ archivos en general - Pasar back a carpeta backend y crear una de Frontend
+P2: Reordenar mongo/ archivos en general - Pasar back a carpeta backend y crear una de Frontend x
 P3: Resolver anotaciones ----------->
 
 Redis:
-sacar el utccnow() en api_redis
+sacar el utccnow() en api_redisx
 
 Checkear: Si van los 2 o 1
 
