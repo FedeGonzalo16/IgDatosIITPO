@@ -199,12 +199,12 @@ Retrieve professor
 Update professor
 
 #### DELETE /profesores/{id}
-Soft delete
+Eliminación suave
 
 ### Reglas Conversión
 
 #### POST /reglas-conversion
-Create conversion rule
+Crear regla de conversión
 ```json
 {
   "codigo_regla": "CONV-GB-AR-v1",
@@ -221,21 +221,21 @@ Create conversion rule
 ```
 
 #### GET /reglas-conversion
-List conversion rules
+Listar reglas de conversión
 
 #### GET /reglas-conversion/{id}
-Retrieve rule
+Obtener regla
 
 #### PUT /reglas-conversion/{id}
-Update rule
+Actualizar regla
 
 #### DELETE /reglas-conversion/{id}
-Soft delete
+Eliminación suave
 
 ### Trayectoria & Reportes
 
 #### GET /estudiantes/{id}/trayectoria
-Get student academic trajectory
+Obtener trayecto académico del estudiante
 ```
 Returns:
 {
@@ -251,13 +251,13 @@ Returns:
 ```
 
 #### GET /reportes/promedios
-Aggregated grade averages
+Promedios de calificaciones agregadas
 ```
 GET /reportes/promedios?pais=AR&nivel=SECUNDARIO&anio=2024
 ```
 
 #### GET /reportes/distribucion
-Grade distribution by region/level
+Distribución de notas por región/nivel
 ```
 GET /reportes/distribucion?pais=AR&region=CABA
 ```
@@ -271,7 +271,7 @@ GET /reportes/distribucion?pais=AR&region=CABA
 ### Nodos (Nodes)
 
 #### POST /nodos/estudiante
-Create student node
+Crear nodo de estudiante
 ```json
 {
   "id": "507f1f77bcf86cd799439011",
@@ -282,15 +282,15 @@ Create student node
 ```
 
 #### POST /nodos/materia
-Create subject node
+Crear nodo de materia
 
 #### POST /nodos/institucion
-Create institution node
+Crear nodo de institución
 
 ### Relaciones (Relationships)
 
 #### POST /relaciones/inscripcion
-Student inscribed in course
+Estudiante inscripto en curso
 ```json
 {
   "estudiante_id": "507f1f77bcf86cd799439011",
@@ -301,7 +301,7 @@ Student inscribed in course
 ```
 
 #### PUT /relaciones/inscripcion/{rel_id}
-Update inscription state
+Actualizar estado de inscripción
 ```json
 {
   "estado": "COMPLETADA" | "CANCELADA"
@@ -309,7 +309,7 @@ Update inscription state
 ```
 
 #### POST /relaciones/cursada
-Register course participation (history)
+Registrar participación en curso (historial)
 ```json
 {
   "estudiante_id": "507f1f77bcf86cd799439011",
@@ -323,7 +323,7 @@ Register course participation (history)
 ### Trayectoria
 
 #### GET /estudiantes/{est_id}/trayectoria
-Full academic trajectory from graph
+Trayecto académico completo desde el grafo
 ```
 Returns: {
   "estudiante_id": "507f...",
@@ -337,13 +337,13 @@ Returns: {
 ### Estadísticas
 
 #### GET /estadisticas/estudiantes-totales
-Count of all student nodes
+Conteo de todos los nodos de estudiante
 
 #### GET /estadisticas/materias-top
-Top 10 most enrolled subjects
+Top 10 de materias más inscritas
 
 #### GET /estadisticas/resumen
-Summary statistics
+Estadísticas resumidas
 
 ---
 
@@ -354,7 +354,7 @@ Summary statistics
 ### Conversiones (Caching & Application)
 
 #### POST /conversiones
-Load conversion rule from MongoDB into Redis cache (7-day TTL)
+Cargar regla de conversión desde MongoDB al caché de Redis (TTL 7 días)
 ```json
 {
   "regla_id_mongo": "507f1f77bcf86cd799439015"
@@ -362,10 +362,10 @@ Load conversion rule from MongoDB into Redis cache (7-day TTL)
 ```
 
 #### GET /conversiones/{codigo}
-Retrieve cached conversion rule with TTL info
+Obtener regla de conversión cacheada con información TTL
 
 #### POST /conversiones/aplicar
-Apply conversion and persist to MongoDB + Cassandra
+Aplicar conversión y persistir en MongoDB + Cassandra
 ```json
 {
   "calificacion_id_mongo": "507f1f77bcf86cd799439014",
@@ -373,13 +373,13 @@ Apply conversion and persist to MongoDB + Cassandra
   "convertido_por": "usuario_123"
 }
 ```
-**Cascades to:**
-- Redis LIST: conversion_audit:{cal_id} (ephemeral, 30d)
+**En cascada a:**
+- Lista Redis: conversion_audit:{cal_id} (efímero, 30d)
 - MongoDB: calificaciones.conversiones_aplicadas (APPEND)
-- Cassandra: reportes_sistemas, registro_auditoria (immutable)
+- Cassandra: reportes_sistemas, registro_auditoria (inmutable)
 
 #### GET /conversiones/auditoria/{cal_id}
-Get conversion audit trail from Redis LIST
+Obtener registro de auditoría de conversión desde Lista Redis
 ```
 Returns: [
   {
@@ -394,15 +394,15 @@ Returns: [
 ```
 
 #### LIST /conversiones
-List all cached conversion rules
+Listar todas las reglas de conversión en caché
 
 #### DELETE /conversiones/{codigo}
-Remove conversion from cache
+Eliminar conversión del caché
 
-### Sesiones (Student Sessions)
+### Sesiones (Sesiones de Estudiante)
 
 #### POST /sesiones
-Create student session (24-hour TTL)
+Crear sesión de estudiante (TTL 24 horas)
 ```json
 {
   "estudiante_id_mongo": "507f1f77bcf86cd799439011",
@@ -421,32 +421,32 @@ Create student session (24-hour TTL)
 ```
 
 #### GET /sesiones/{session_id}
-Retrieve session info + last access time
+Obtener información de sesión + última hora de acceso
 
 #### PUT /sesiones/{session_id}
-Update session (touch last_accessed)
+Actualizar sesión (tocar last_accessed)
 
 #### DELETE /sesiones/{session_id}
-Close session (logout)
+Cerrar sesión (cerrar sesión)
 
 #### GET /sesiones/estudiante/{est_id}
-Get session by student ID
+Obtener sesión por ID de estudiante
 
 #### GET /sesiones
-List all active sessions with TTL
+Listar todas las sesiones activas con TTL
 
-### Student Cache
+### Caché de Estudiante
 
 #### POST /cache/estudiante
-Cache student data (7-day TTL)
+Cachear datos de estudiante (TTL 7 días)
 
 #### GET /cache/estudiante/{est_id}
-Retrieve cached student data
+Obtener datos de estudiante en caché
 
 ### Monitoreo
 
 #### GET /estadisticas
-Redis stats: conversiones count, sesiones activas, auditoría entries, memory
+Estadísticas de Redis: conteo de conversiones, sesiones activas, registros de auditoría, memoria
 ```json
 {
   "conversiones_cacheadas": 8,
@@ -458,7 +458,7 @@ Redis stats: conversiones count, sesiones activas, auditoría entries, memory
 ```
 
 #### GET /salud
-Health check - verify Redis is responding
+Verificación de estado - verificar que Redis esté respondiendo
 
 ---
 
@@ -466,10 +466,10 @@ Health check - verify Redis is responding
 
 ### Base URL: `http://localhost:5003/api/cassandra`
 
-### Auditoría (Immutable Append-Only)
+###Ó Auditoría (Solo-Inserción Inmutable)
 
 #### POST /auditoria
-Register audit event (append-only)
+Registrar evento de auditoría (solo-inserción)
 ```json
 {
   "id_estudiante": "507f1f77bcf86cd799439011",
@@ -483,7 +483,7 @@ Register audit event (append-only)
   }
 }
 ```
-**Returns:**
+**Devuelve:**
 ```json
 {
   "id_auditoria": "07d86c58-3f8a-11eb-88b1-e0b9dd0c5e67",
@@ -493,13 +493,13 @@ Register audit event (append-only)
 ```
 
 #### GET /auditoria/estudiante/{id}
-Get audit trail for student (most recent first)
+Obtener registro de auditoría para estudiante (más reciente primero)
 ```
 GET /auditoria/estudiante/507f...?limit=100&tipo_accion=CONVERSION_APLICADA
 ```
 
 #### GET /auditoria
-Query audit trail by date range (for compliance)
+Consultar registro de auditoría por rango de fecha (para cumplimiento)
 ```
 GET /auditoria?fecha_inicio=2024-01-01&fecha_fin=2024-01-31&limit=1000
 ```
@@ -507,7 +507,7 @@ GET /auditoria?fecha_inicio=2024-01-01&fecha_fin=2024-01-31&limit=1000
 ### Reportes Geográficos
 
 #### POST /reportes/geograficos
-Register grade into geographic analytics
+Registrar calificación en análisis geográfico
 ```json
 {
   "region": "CABA",
@@ -518,17 +518,17 @@ Register grade into geographic analytics
 ```
 
 #### GET /reportes/geograficos
-Get geographic analytics
+Obtener análisis geográfico
 ```
 GET /reportes/geograficos?region=CABA&anio_lectivo=2024
 GET /reportes/geograficos?region=CABA&institucion_id=507f...&anio_lectivo=2024
 ```
-**Returns:** Promedio per institution in region with year-over-year
+**Devuelve:** Promedio por institución en región con comparación año a año
 
 ### Reportes Sistemas
 
 #### POST /reportes/sistemas
-Register conversion into system analytics
+Registrar conversión en análisis de sistemas
 ```json
 {
   "sistema_educativo": "AR",
@@ -539,16 +539,16 @@ Register conversion into system analytics
 ```
 
 #### GET /reportes/sistemas
-Cross-system effectiveness analysis
+Análisis de efectividad entre sistemas
 ```
 GET /reportes/sistemas?sistema_educativo=AR&anio_lectivo=2024
 ```
-**Returns:** Promedio per subject after conversion into target system
+**Devuelve:** Promedio por materia después de conversión al sistema destino
 
 ### Analytics - Approval Rates
 
 #### POST /analytics/aprobacion
-Register approval metric
+Registrar métrica de aprobación
 ```json
 {
   "pais": "AR",
@@ -560,7 +560,7 @@ Register approval metric
 ```
 
 #### GET /analytics/aprobacion
-Get approval rate metrics
+Obtener métricas de tasa de aprobación
 ```
 GET /analytics/aprobacion?pais=AR&nivel_educativo=SECUNDARIO&anio_lectivo=2024
 ```
@@ -580,7 +580,7 @@ GET /analytics/aprobacion?pais=AR&nivel_educativo=SECUNDARIO&anio_lectivo=2024
 ### Analytics - Distribution
 
 #### POST /analytics/distribucion
-Register grade distribution
+Registrar distribución de calificaciones
 ```json
 {
   "pais": "AR",
@@ -591,11 +591,11 @@ Register grade distribution
 ```
 
 #### GET /analytics/distribucion
-Get grade distribution histogram
+Obtener histograma de distribución de calificaciones
 ```
 GET /analytics/distribucion?pais=AR&nivel_educativo=SECUNDARIO&anio_lectivo=2024
 ```
-**Returns:** Percentage in each grade range
+**Devuelve:** Porcentaje en cada rango de calificación
 
 ### Salud
 

@@ -238,7 +238,7 @@ def registrar_auditoria():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Historial de auditoría de un estudiante (append-only, inmutable)
+# Historial de auditoría de un estudiante (solo-inserción, inmutable)
 @app.route('/api/cassandra/auditoria/estudiante/<estudiante_id>', methods=['GET'])
 def obtener_auditoria_estudiante(estudiante_id):
     """
@@ -292,7 +292,7 @@ def obtener_auditoria_estudiante(estudiante_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Auditoría global por rango de fecha (append-only, inmutable)
+# Auditoría global por rango de fecha (solo-inserción, inmutable)
 @app.route('/api/cassandra/auditoria', methods=['GET'])
 def obtener_auditoria_global():
     """
@@ -310,7 +310,7 @@ def obtener_auditoria_global():
         if not fecha_inicio or not fecha_fin:
             return jsonify({"error": "Se requieren fecha_inicio y fecha_fin"}), 400
         
-        # Parsear fechas
+        # Analizar fechas
         dt_inicio = datetime.fromisoformat(fecha_inicio)
         dt_fin = datetime.fromisoformat(fecha_fin)
         

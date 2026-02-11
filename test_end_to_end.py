@@ -208,7 +208,7 @@ def step_5_load_conversion_rule():
     
     url = f"{BASE_URLs['redis']}/conversiones"
     
-    # First, we need a conversion rule. For testing, we'll create one in MongoDB first.
+    # Primero, necesitamos una regla de conversión. Para pruebas, crearemos una en MongoDB primero.
     mongo_url = f"{BASE_URLs['mongo']}/reglas-conversion"
     mongo_payload = {
         "codigo_regla": f"CONV-TEST-GB-AR-{int(time.time())}",
@@ -237,7 +237,7 @@ def step_5_load_conversion_rule():
     
     print(f"\n✓ Conversion rule created in MongoDB: {regla_id}")
     
-    # Now load it into Redis cache
+    # Ahora cargarla en la caché de Redis
     redis_payload = {"regla_id_mongo": regla_id}
     
     print("\nNow load into Redis cache (7-day TTL):")
@@ -260,13 +260,13 @@ def step_5_load_conversion_rule():
 
 def step_6_apply_conversion(calificacion_id, codigo_regla):
     print_section("Step 6: Apply Conversion (Redis → MongoDB → Cassandra)")
-    print("This POST triggers dual persistence:")
-    print("  1. Reads rule from Redis cache (or MongoDB fallback)")
-    print("  2. Applies conversion logic (8.5 GB → 8.7 AR)")
-    print("  3. LPUSH to Redis LIST conversion_audit:{cal_id} (ephemeral, 30d)")
-    print("  4. $PUSH MongoDB calificaciones.conversiones_aplicadas (persistent)")
-    print("  5. UPDATE Cassandra reportes_sistemas (conversion effectiveness)")
-    print("  6. INSERT Cassandra registro_auditoria (immutable log)")
+    print("Este POST dispara persistencia dual:")
+    print("  1. Lee regla desde caché Redis (o respaldo MongoDB)")
+    print("  2. Aplica lógica de conversión (8.5 GB → 8.7 AR)")
+    print("  3. LPUSH a lista Redis conversion_audit:{cal_id} (efímero, 30d)")
+    print("  4. $PUSH MongoDB calificaciones.conversiones_aplicadas (persistente)")
+    print("  5. UPDATE Cassandra reportes_sistemas (efectividad de conversión)")
+    print("  6. INSERT Cassandra registro_auditoria (registro inmutable)")
     
     url = f"{BASE_URLs['redis']}/conversiones/aplicar"
     payload = {
@@ -284,12 +284,12 @@ def step_6_apply_conversion(calificacion_id, codigo_regla):
         print(response.text)
         return False
     
-    print(f"\n✓ Conversion applied:")
-    print("  ✓ Redis: Rule retrieved from cache (7d TTL)")
-    print("  ✓ Redis: Conversion logged to LIST (30d TTL, append-only)")
-    print("  ✓ MongoDB: calificaciones.conversiones_aplicadas updated")
-    print("  ✓ Cassandra: reportes_sistemas counter updated")
-    print("  ✓ Cassandra: Immutable audit entry created")
+    print(f"\n✓ Conversión aplicada:")
+    print("  ✓ Redis: Regla recuperada de caché (7d TTL)")
+    print("  ✓ Redis: Conversión registrada en LIST (30d TTL, solo-inserción)")
+    print("  ✓ MongoDB: calificaciones.conversiones_aplicadas actualizado")
+    print("  ✓ Cassandra: contador reportes_sistemas actualizado")
+    print("  ✓ Cassandra: entrada de auditoría inmutable creada")
     
     return True
 
@@ -362,7 +362,7 @@ def step_9_view_geographic_analytics():
             print(f"  - {report['institucion_id']}: promedio {report['promedio']} ({report['total_registros']} records)")
 
 # ============================================================================
-# STEP 10: VERIFY SYSTEM HEALTH
+# PASO 10: VERIFICAR SALUD DEL SISTEMA
 # ============================================================================
 
 def step_10_verify_health():
@@ -396,12 +396,12 @@ def main():
     print("║" + " "*68 + "║")
     print("╚" + "═"*68 + "╝")
     
-    # Verify all systems are running
+    # Verificar que todos los sistemas estén corriendo
     print_section("10. Pre-Check: System Health")
     step_10_verify_health()
     
     try:
-        # Run tests
+        # Ejecutar pruebas
         institucion_id = step_1_create_institution()
         if not institucion_id:
             return
@@ -418,7 +418,7 @@ def main():
         if not calificacion_id:
             return
         
-        # Wait for eventual consistency in Cassandra
+        # Esperar consistencia eventual en Cassandra
         print("\n[Waiting 2 seconds for async Cassandra writes...]")
         time.sleep(2)
         

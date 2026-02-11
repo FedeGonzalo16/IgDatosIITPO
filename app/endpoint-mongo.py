@@ -264,7 +264,7 @@ def update_estudiante(estudiante_id):
 
 @app.route('/api/v1/estudiantes/<estudiante_id>', methods=['DELETE'])
 def delete_estudiante(estudiante_id):
-    # Soft delete (cambio de estado) en Mongo + Log inmutable en Cassandra.
+    # Eliminación suave (cambio de estado) en Mongo + Registro inmutable en Cassandra.
     try:
         if not ObjectId.is_valid(estudiante_id):
             return jsonify({'error': 'ID inválido'}), 400
@@ -273,7 +273,7 @@ def delete_estudiante(estudiante_id):
         if not estudiante:
             return jsonify({'error': 'Estudiante no encontrado'}), 404
         
-        # Soft delete: cambiar estado
+        # Eliminación suave: cambiar estado
         col_estudiantes.update_one(
             {'_id': ObjectId(estudiante_id)},
             {'$set': {
@@ -873,7 +873,7 @@ def delete_regla_conversion(regla_id):
         if not regla:
             return jsonify({'error': 'Regla de conversión no encontrada'}), 404
         
-        # Soft delete: marcar como inactiva
+        # Eliminación suave: marcar como inactiva
         col_conversiones.update_one(
             {'_id': ObjectId(regla_id)},
             {'$set': {'metadata.estado': 'INACTIVA'}}

@@ -19,27 +19,27 @@ KEY PRINCIPLES:
 CASSANDRA_KEYSPACE = "edugrade_audit"
 CASSANDRA_REPLICATION = {"class": "SimpleStrategy", "replication_factor": 3}
 
-# ===== TABLE 1: REPORTES_GEOGRAFICOS =====
-# Purpose: Pre-aggregated geographic/institutional analytics
-# Use Case: Regional performance trends, institution comparison by year
+# ===== TABLA 1: REPORTES_GEOGRAFICOS =====
+# Propósito: Análisis geográfico/institucional pre-agregados
+# Caso de uso: Tendencias de desempeño regional, comparación institucional por año
 # 
-# Characteristics:
-# - Partitioned by REGION (geographic dimension)
-# - Clustered by institucion_id, anio_lectivo (DESC)
-# - Uses native COUNTER type for atomic increments
-# - No aggregation needed: reads pre-computed promedio directly
+# Características:
+# - Particionado por REGIÓN (dimensión geográfica)
+# - Agrupado por institucion_id, anio_lectivo (DESC)
+# - Usa tipo COUNTER nativo para incrementos atómicos
+# - No se requiere agregación: lee promedio pre-computado directamente
 #
 # Schema:
 REPORTES_GEOGRAFICOS = {
     "partition_key": ["region"],
     "clustering_key": [("institucion_id", "ASC"), ("anio_lectivo", "DESC")],
     "columns": {
-        "region": "TEXT",                      # Partition: CABA, Córdoba, etc.
-        "institucion_id": "TEXT",              # Clustering: MongoDB ObjectId
-        "anio_lectivo": "INT",                 # Clustering: 2024, 2025
-        "acumulado_notas": "DOUBLE",           # SUM of all grades in this cell
-        "contador_notas": "COUNTER",           # COUNT of grades (atomic increment)
-        "fecha_actualizacion": "TIMESTAMP"     # Last update time
+        "region": "TEXT",                      # Partición: CABA, Córdoba, etc.
+        "institucion_id": "TEXT",              # Agrupamiento: MongoDB ObjectId
+        "anio_lectivo": "INT",                 # Agrupamiento: 2024, 2025
+        "acumulado_notas": "DOUBLE",           # SUMA de todas las notas en esta celda
+        "contador_notas": "COUNTER",           # CONTEO de notas (incremento atómico)
+        "fecha_actualizacion": "TIMESTAMP"     # Hora de última actualización
     },
     "use_cases": [
         "GET /api/cassandra/reportes/geograficos?region=CABA&anio_lectivo=2024",
@@ -48,21 +48,21 @@ REPORTES_GEOGRAFICOS = {
     ]
 }
 
-# ===== TABLE 2: REPORTES_SISTEMAS =====
-# Purpose: Cross-educational system comparisons (conversión effectiveness)
-# Use Case: Track conversion success between GB/AR/US systems
+# ===== TABLA 2: REPORTES_SISTEMAS =====
+# Propósito: Comparaciones entre sistemas educativos (efectividad de conversión)
+# Caso de uso: Rastrear éxito de conversión entre sistemas GB/AR/US
 #
 # Schema:
 REPORTES_SISTEMAS = {
     "partition_key": ["sistema_educativo"],
     "clustering_key": [("anio_lectivo", "DESC"), ("materia_nombre", "ASC")],
     "columns": {
-        "sistema_educativo": "TEXT",           # Partition: 'GB', 'AR', 'US'
-        "anio_lectivo": "INT",                 # Clustering: 2024
-        "materia_nombre": "TEXT",              # Clustering: 'Matemática'
-        "promedio_convertido": "FLOAT",        # Latest average grade in target system
-        "contador_registros": "COUNTER",       # Total conversions for this row
-        "fecha_actualizacion": "TIMESTAMP"     # Last update
+        "sistema_educativo": "TEXT",           # Partición: 'GB', 'AR', 'US'
+        "anio_lectivo": "INT",                 # Agrupamiento: 2024
+        "materia_nombre": "TEXT",              # Agrupamiento: 'Matemática'
+        "promedio_convertido": "FLOAT",        # Promedio más reciente en sistema destino
+        "contador_registros": "COUNTER",       # Total de conversiones para esta fila
+        "fecha_actualizacion": "TIMESTAMP"     # Última actualización
     },
     "use_cases": [
         "Compare effectiveness of conversión rules: GB → AR vs GB → US",
@@ -71,32 +71,32 @@ REPORTES_SISTEMAS = {
     ]
 }
 
-# ===== TABLE 3: REGISTRO_AUDITORIA =====
-# Purpose: Immutable, append-only audit trail for compliance
-# Use Case: Regulatory audits, trazabilidad, dispute resolution
+# ===== TABLA 3: REGISTRO_AUDITORIA =====
+# Propósito: Registro de auditoría inmutable, solo-inserción para cumplimiento normativo
+# Caso de uso: Auditorías normativas, trazabilidad, resolución de disputas
 # 
-# IMPORTANT: This is the PRIMARY audit log. INSERT ONLY - NO UPDATES/DELETES
+# IMPORTANTE: Este es el REGISTRO DE AUDITORÍA PRINCIPAL. SOLO INSERCIÓN - SIN ACTUALIZACIONES/ELIMINACIONES
 # 
-# Characteristics:
-# - Partitioned by id_estudiante (allows per-student audit history)
-# - Clustered by fecha_creacion (DESC), then id_auditoria (DESC)
-# - TIMEUUID ensures total ordering even in distributed system
-# - Every INSERT is immutable - cannot be changed or deleted
+# Características:
+# - Particionado por id_estudiante (permite historial de auditoría por estudiante)
+# - Agrupado por fecha_creacion (DESC), luego id_auditoria (DESC)
+# - TIMEUUID asegura orden total inclusive en sistema distribuido
+# - Cada INSERCIÓN es inmutable - no puede ser cambiada o eliminada
 #
 # Schema:
 REGISTRO_AUDITORIA = {
     "partition_key": ["id_estudiante"],
     "clustering_key": [("fecha_creacion", "DESC"), ("id_auditoria", "DESC")],
     "columns": {
-        "id_estudiante": "TEXT",               # Partition: MongoDB ObjectId
-        "fecha_creacion": "TIMESTAMP",         # Clustering: When recorded
-        "id_auditoria": "TIMEUUID",            # Clustering: Unique, ordered identifier
-        "nota_original": "TEXT",               # Original grade value
-        "usuario_auditor": "TEXT",             # Who triggered the action
+        "id_estudiante": "TEXT",               # Partición: MongoDB ObjectId
+        "fecha_creacion": "TIMESTAMP",         # Agrupamiento: Cuándo se registró
+        "id_auditoria": "TIMEUUID",            # Agrupamiento: Identificador único y ordenado
+        "nota_original": "TEXT",               # Valor de la nota original
+        "usuario_auditor": "TEXT",             # Quién disparó la acción
         "tipo_accion": "TEXT",                 # CALIFICACION_REGISTRADA | CONVERSION_APLICADA | CAMBIO_ESTADO
-        "descripcion": "TEXT",                 # Human-readable action description
-        "hash_integridad": "TEXT",             # SHA256 for integrity verification
-        "metadata": "TEXT"                     # JSON: additional context
+        "descripcion": "TEXT",                 # Descripción de acción legible por humanos
+        "hash_integridad": "TEXT",             # SHA256 para verificación de integridad
+        "metadata": "TEXT"                     # JSON: contexto adicional
     },
     "immutability_guarantees": [
         "INSERT ONLY - no UPDATE or DELETE",
@@ -112,20 +112,20 @@ REGISTRO_AUDITORIA = {
     ]
 }
 
-# ===== TABLE 4: AUDITORIA_POR_FECHA =====
-# Purpose: Optimized index for time-range queries
-# Use Case: Find all audits in date range (e.g., 2024-01-01 to 2024-01-31)
+# ===== TABLA 4: AUDITORIA_POR_FECHA =====
+# Propósito: Índice optimizado para consultas por rango de fechas
+# Caso de uso: Encontrar todas las auditorías en un rango de fecha (ej: 2024-01-01 a 2024-01-31)
 #
 # Schema:
 AUDITORIA_POR_FECHA = {
     "partition_key": ["fecha_creacion"],
     "clustering_key": [("id_auditoria", "DESC")],
     "columns": {
-        "fecha_creacion": "TIMESTAMP",         # Partition: Enables range queries
-        "id_auditoria": "TIMEUUID",            # Clustering: Ordered within date
-        "id_estudiante": "TEXT",               # Denormalized from primary audit
-        "tipo_accion": "TEXT",                 # Allows filtering after fetch
-        "usuario_auditor": "TEXT"              # Allows filtering after fetch
+        "fecha_creacion": "TIMESTAMP",         # Partición: Habilita consultas por rango
+        "id_auditoria": "TIMEUUID",            # Agrupamiento: Ordenado dentro de la fecha
+        "id_estudiante": "TEXT",               # Desnormalizado del registro principal de auditoría
+        "tipo_accion": "TEXT",                 # Permite filtrado después de obtener
+        "usuario_auditor": "TEXT"              # Permite filtrado después de obtener
     },
     "use_cases": [
         "Find all audits between 2024-01-01 and 2024-01-31",
@@ -134,21 +134,21 @@ AUDITORIA_POR_FECHA = {
     ]
 }
 
-# ===== TABLE 5: ANALYTICS_APROBACION =====
-# Purpose: Approval rate analytics by country/level
-# Use Case: Educational ministry metrics, approval trend analysis
+# ===== TABLA 5: ANALYTICS_APROBACION =====
+# Propósito: Análisis de tasas de aprobación por país/nivel
+# Caso de uso: Métricas de ministerio de educación, análisis de tendencias de aprobación
 #
 # Schema:
 ANALYTICS_APROBACION = {
     "partition_key": ["pais", "nivel_educativo"],
     "clustering_key": [("anio_lectivo", "DESC")],
     "columns": {
-        "pais": "TEXT",                        # Partition: 'AR', 'BR', 'MX'
-        "nivel_educativo": "TEXT",             # Partition: 'PRIMARIO', 'SECUNDARIO', 'UNIVERSITARIO'
-        "anio_lectivo": "INT",                 # Clustering: 2024
-        "total_calificaciones": "COUNTER",     # Count of all grades
-        "total_aprobadas": "COUNTER",          # Count of passing grades (>= 6.0)
-        "promedio_notas": "FLOAT"              # Average grade value
+        "pais": "TEXT",                        # Partición: 'AR', 'BR', 'MX'
+        "nivel_educativo": "TEXT",             # Partición: 'PRIMARIO', 'SECUNDARIO', 'UNIVERSITARIO'
+        "anio_lectivo": "INT",                 # Agrupamiento: 2024
+        "total_calificaciones": "COUNTER",     # Conteo de todas las notas
+        "total_aprobadas": "COUNTER",          # Conteo de notas aprobadas (>= 6.0)
+        "promedio_notas": "FLOAT"              # Valor promedio de la nota
     },
     "metrics": {
         "tasa_aprobacion": "total_aprobadas / total_calificaciones * 100",
@@ -161,21 +161,21 @@ ANALYTICS_APROBACION = {
     ]
 }
 
-# ===== TABLE 6: DISTRIBUCION_NOTAS =====
-# Purpose: Grade distribution histograms
-# Use Case: Identify grade inflation, assess assessment quality
+# ===== TABLA 6: DISTRIBUCION_NOTAS =====
+# Propósito: Histogramas de distribución de notas
+# Caso de uso: Identificar inflación de calificaciones, evaluar calidad de la evaluación
 #
 # Schema:
 DISTRIBUCION_NOTAS = {
     "partition_key": ["pais", "nivel_educativo"],
     "clustering_key": [("anio_lectivo", "DESC"), ("rango_nota", "ASC")],
     "columns": {
-        "pais": "TEXT",                        # Partition: Country
-        "nivel_educativo": "TEXT",             # Partition: Education level
-        "anio_lectivo": "INT",                 # Clustering: Year
-        "rango_nota": "TEXT",                  # Clustering: '0-3' | '3-6' | '6-7' | '7-8' | '8-9' | '9-10'
-        "cantidad": "COUNTER",                 # Count in this range
-        "porcentaje": "FLOAT"                  # Percentage of total
+        "pais": "TEXT",                        # Partición: País
+        "nivel_educativo": "TEXT",             # Partición: Nivel educativo
+        "anio_lectivo": "INT",                 # Agrupamiento: Año
+        "rango_nota": "TEXT",                  # Agrupamiento: '0-3' | '3-6' | '6-7' | '7-8' | '8-9' | '9-10'
+        "cantidad": "COUNTER",                 # Conteo en este rango
+        "porcentaje": "FLOAT"                  # Porcentaje del total
     },
     "use_cases": [
         "Distribution shape: Normal vs bimodal (potential grade inflation)",

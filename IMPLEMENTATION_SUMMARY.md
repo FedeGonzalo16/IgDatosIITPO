@@ -1,38 +1,38 @@
-# EduGrade System - Implementation Summary
+# Sistema EduGrade - Resumen de Implementación
 
-## ✓ COMPLETE MULTI-DATABASE SYSTEM DELIVERED
+## ✓ SISTEMA MULTI-BASE DE DATOS COMPLETO ENTREGADO
 
-This document summarizes the fully integrated educational data management system spanning 5 databases and multiple API layers.
+Este documento resume el sistema integrado de gestión de datos educativos que abarca 5 bases de datos y múltiples capas de API.
 
 ---
 
-## Executive Summary
+## Resumen Ejecutivo
 
-### What Was Built
+### Qué se Construyó
 
-A production-ready, multi-database educational data platform that manages:
-- **100K+ students** with complete academic history
-- **1M+ grade records** with instant analytics
-- **Cross-system conversions** (GB ↔ AR, US, FR, etc.)
-- **Immutable audit trails** for regulatory compliance
-- **Real-time graph relationships** for trayectoria analysis
+Una plataforma de datos educativos multi-base de datos lista para producción que gestiona:
+- **100K+ estudiantes** con historial académico completo
+- **1M+ registros de calificaciones** con análisis instantáneo
+- **Conversiones entre sistemas** (GB ↔ AR, US, FR, etc.)
+- **Registros de auditoría inmutables** para cumplimiento normativo
+- **Relaciones de grafo en tiempo real** para análisis de trayectoria
 
-### Key Achievements
+### Logros Clave
 
-| Component | Status | Key Metrics |
+| Componente | Estado | Métricas Clave |
 |-----------|--------|-------------|
-| **MongoDB** | ✅ Complete | 6 collections, 500+ endpoints, soft delete, versioning |
-| **Neo4j** | ✅ Complete | 4 node types, 4 relationship types, trayectoria queries |
-| **Redis** | ✅ Complete | Conversion caching (7d), sessions (24h), audit (30d) |
-| **Cassandra** | ✅ Complete | 6 tables, pre-aggregated analytics, append-only audit |
-| **Integration** | ✅ Complete | Dual persistence, cascade writes, data consistency |
+| **MongoDB** | ✅ Completado | 6 colecciones, 500+ endpoints, eliminación suave, versionado |
+| **Neo4j** | ✅ Completado | 4 tipos de nodos, 4 tipos de relaciones, consultas de trayectoria |
+| **Redis** | ✅ Completado | Caché de conversiones (7d), sesiones (24h), auditoría (30d) |
+| **Cassandra** | ✅ Completado | 6 tablas, análisis pre-agregados, auditoría solo-inserción |
+| **Integración** | ✅ Completado | Persistencia dual, escrituras en cascada, consistencia de datos |
 
-### Data Flow Architecture
+### Arquitectura de Flujo de Datos
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         REST API Layer (Flask)                  │
-│  Port 5000    5001    5002    5003              │
+│         Capa API REST (Flask)                   |
+│  Puerto 5000    5001    5002    5003            |
 │  Mongo  Neo4j  Redis  Cassandra                │
 └────────┬──────┬──────┬────────┬────────────────┘
          │      │      │        │
@@ -57,383 +57,384 @@ A production-ready, multi-database educational data platform that manages:
 
 ---
 
-## Database Specifications
+## Especificaciones de Bases de Datos
 
-### 1. MongoDB: Core Transactional Storage
+### 1. MongoDB: Almacenamiento Transaccional Principal
 
-**Purpose:** Mutable, ACID-compliant transactional database
+**Propósito:** Base de datos transaccional ACID mutable
 
-**Collections:**
-- `estudiantes` - Student records with metadata
-- `instituciones` - Institution/school master data
-- `materias` - Subject/course master data
-- `calificaciones` - Grade records with conversions_aplicadas array
-- `profesores` - Professor/teacher records
-- `reglas_conversion` - Conversion rule definitions
+**Colecciones:**
+- `estudiantes` - Registros de estudiantes con metadatos
+- `instituciones` - Datos maestros de instituciones/escuelas
+- `materias` - Datos maestros de materias/cursos
+- `calificaciones` - Registros de calificaciones con array conversiones_aplicadas
+- `profesores` - Registros de profesores/maestros
+- `reglas_conversion` - Definiciones de reglas de conversión
 
-**Capabilities:**
+**Capacidades:**
 ```
-✓ CRUD operations on all entities
-✓ Soft delete via estado field
-✓ Versionado on calificaciones (version counter)
-✓ Hash integrity on each grade (SHA256)
-✓ Unique indexes on legajo, codigo, etc.
-✓ Aggregation queries for reportes
-✓ Sync to Neo4j on grade registration
-✓ Sync to Cassandra on grade + conversion
+✓ Operaciones CRUD en todas las entidades
+✓ Eliminación suave mediante campo estado
+✓ Versionado en calificaciones (contador de versión)
+✓ Integridad de hash en cada calificación (SHA256)
+✓ Índices únicos en legajo, código, etc.
+✓ Consultas de agregación para reportes
+✓ Sincronización a Neo4j en registro de calificación
+✓ Sincronización a Cassandra en calificación + conversión
 ```
 
-**Endpoints:** 25+ (6 entity types × CRUD + analytics)
+**Endpoints:** 25+ (6 tipos de entidades × CRUD + análisis)
 
-**Typical Latency:** < 10ms (local)
+**Latencia Típica:** < 10ms (local)
 
 ---
 
-### 2. Neo4j: Relationship Graph
+### 2. Neo4j: Grafo de Relaciones
 
-**Purpose:** Navigate academic relationships and reconstruct trayectorias
+**Propósito:** Navegar relaciones académicas y reconstruir trayectorias
 
-**Model:**
+**Modelo:**
 ```
 Nodos:
   - Estudiante (id, nombre, apellido, legajo)
-  - Materia (id, nombre, codigo)
-  - Institución (id, nombre, region)
+  - Materia (id, nombre, código)
+  - Institución (id, nombre, región)
   - Calificación (id, nota, fecha)
 
 Relaciones:
   - INSCRIPTO_EN: Estudiante --[estado, fecha]--> Materia
-    (Current active enrollments)
+    (Inscripciones activas actuales)
   
   - CURSÓ: Estudiante --[numero_intento, estado, fecha]--> Materia
-    (Historical course completions)
+    (Completaciones de cursos históricos)
     
   - ESTUDIA_EN: Estudiante --[fecha_ingreso]--> Institución
-    (Institutional affiliation)
+    (Afiliación institucional)
     
   - PERTENECE_A: Materia --[institucion]--> Institución
-    (Subject ownership)
+    (Propiedad de materia)
 ```
 
-**Capabilities:**
+**Capacidades:**
 ```
-✓ Instantaneous trayectoria reconstruction
-✓ Path finding (shortest path to graduation)
-✓ Community detection (students with similar journey)
-✓ Estadísticas (top materias, enrollment trends)
-✓ Multi-intento tracking (student retakes)
+✓ Reconstrucción instantánea de trayectoria
+✓ Búsqueda de rutas (camino más corto a graduación)
+✓ Detección de comunidades (estudiantes con trayectoria similar)
+✓ Estadísticas (materias principales, tendencias de inscripción)
+✓ Rastreo multi-intento (reintentos del estudiante)
 ```
 
-**Endpoints:** 12+ (nodos, relaciones, trayectoria, stats)
+**Endpoints:** 12+ (nodos, relaciones, trayectoria, estadísticas)
 
-**Typical Latency:** < 50ms (graph traversal)
+**Latencia Típica:** < 50ms (traversal de grafo)
 
 ---
 
-### 3. Redis: Cache & Session Layer
+### 3. Redis: Capa de Caché y Sesiones
 
-**Purpose:** High-speed caching and ephemeral state management
+**Propósito:** Caché de alta velocidad y gestión de estado efímero
 
-**Data Structures:**
+**Estructuras de Datos:**
 ```
 conversion:{codigo}
   → STRING (JSON)
-  → 7-day TTL
-  → Conversion rule from MongoDB
+  → TTL 7 días
+  → Regla de conversión de MongoDB
 
 conversion_audit:{calificacion_id}
   → LIST (LIFO)
-  → 30-day TTL
-  → Append-only audit trail
+  → TTL 30 días
+  → Registro de auditoría solo-inserción
 
 session:{session_id}
   → STRING (JSON)
-  → 24-hour TTL
-  → Student session with last_accessed
+  → TTL 24 horas
+  → Sesión de estudiante con último_acceso
 
 student_session:{estudiante_id}
   → STRING (session_id)
-  → 24-hour TTL
-  → Quick lookup: student → session
+  → TTL 24 horas
+  → Búsqueda rápida: estudiante → sesión
 
 student_cache:{estudiante_id}
-  → STRING (JSON student metadata)
-  → 7-day TTL
-  → Denormalized student data
+  → STRING (JSON metadatos estudiante)
+  → TTL 7 días
+  → Datos de estudiante desnormalizados
 ```
 
-**Capabilities:**
+**Capacidades:**
 ```
-✓ Load-test conversions from MongoDB on demand
-✓ Cache for 7 days (reduces MongoDB hits 99%+)
-✓ Session management with auto-expiration
-✓ Ephemeral audit trail (30 days)
-✓ Automatic TTL cleanup (no manual GC needed)
-✓ LIST-based audit for O(1) append
+✓ Cargar conversiones desde MongoDB bajo demanda
+✓ Caché por 7 días (reduce consultas MongoDB 99%+)
+✓ Gestión de sesiones con auto-expiración
+✓ Registro de auditoría efímero (30 días)
+✓ Limpieza automática de TTL (sin necesidad de recolector de basura manual)
+✓ Auditoría basada en LIST para appendChild O(1)
 ```
 
-**Endpoints:** 10+ (conversion, session, cache, stats)
+**Endpoints:** 10+ (conversión, sesión, caché, estadísticas)
 
-**Typical Latency:** < 1ms (in-memory)
+**Latencia Típica:** < 1ms (en memoria)
 
 ---
 
-### 4. Cassandra: Analytics & Immutable Audit
+### 4. Cassandra: Análisis y Auditoría Inmutable
 
-**Purpose:** OLAP analytics + compliance audit trails
+**Propósito:** Análisis OLAP + registros de auditoría de cumplimiento
 
-**Tables:**
+**Tablas:**
 
-#### a) `reportes_geograficos` (Analytics)
+#### a) `reportes_geograficos` (Análisis)
 ```
-Partition: region (CABA, Buenos Aires, etc.)
-Clustering: institucion_id (ASC), anio_lectivo (DESC)
+Partición: región (CABA, Buenos Aires, etc.)
+Agrupamiento: institucion_id (ASC), anio_lectivo (DESC)
 
-Enables:
-  - Which institutions in region CABA have highest avg grade?
-  - Year-over-year: CABA 2023 vs 2024
-  - Geographic performance distribution
-  - 1M+ records: instant O(1) query
-```
-
-#### b) `reportes_sistemas` (Conversion Effectiveness)
-```
-Partition: sistema_educativo (GB, AR, US, FR)
-Clustering: anio_lectivo (DESC), materia_nombre (ASC)
-
-Enables:
-  - How effective are GB→AR conversions for Matemática?
-  - Cross-system comparative analysis
-  - Annual benchmarking
-  - Subject-level conversion success rates
+Habilita:
+  - ¿Qué instituciones en región CABA tienen la calificación promedio más alta?
+  - Año a año: CABA 2023 vs 2024
+  - Distribución de desempeño geográfico
+  - 1M+ registros: consulta instantánea O(1)
 ```
 
-#### c) `registro_auditoria` (Immutable Audit - CORE COMPLIANCE TABLE)
+#### b) `reportes_sistemas` (Efectividad de Conversión)
 ```
-Partition: id_estudiante
-Clustering: fecha_creacion (DESC), id_auditoria (DESC)
+Partición: sistema_educativo (GB, AR, US, FR)
+Agrupamiento: anio_lectivo (DESC), materia_nombre (ASC)
 
-INSERT ONLY - NO UPDATE/DELETE
-  ✓ TIMEUUID ensures total ordering
-  ✓ Replication RF=3 prevents tampering
-  ✓ Hash integrity detects changes
-  ✓ Write-ahead logs persist before ack
+Habilita:
+  - ¿Qué tan efectivas son las conversiones GB→AR para Matemática?
+  - Análisis comparativo entre sistemas
+  - Benchmarking anual
+  - Tasas de éxito de conversión a nivel de materia
+```
+
+#### c) `registro_auditoria` (Auditoría Inmutable - TABLA PRINCIPAL DE CUMPLIMIENTO)
+```
+Partición: id_estudiante
+Agrupamiento: fecha_creacion (DESC), id_auditoria (DESC)
+
+SLO INSERCIÓN - SIN ACTUALIZACIÓN/ELIMINACIÓN
+  ✓ TIMEUUID asegura orden total
+  ✓ Replicación RF=3 previene manipulación
+  ✓ Integridad de hash detecta cambios
+  ✓ Logs de escritura previa persisten antes de confirmar
   
-Enables:
-  - Full trazabilidad: "What happened to student 123?"
-  - Regulatory audits: Show all changes in date range
-  - Dispute resolution: When was grade changed?
-  - Forensics: Detect unauthorized modifications
+Habilita:
+  - Trazabilidad completa: "¿Qué sucedió con el estudiante 123?"
+  - Auditorías normativas: Mostrar todos los cambios en rango de fecha
+  - Resolución de disputas: ¿Cuándo cambió la calificación?
+  - Análisis forense: Detectar modificaciones no autorizadas
 ```
 
-#### d) `auditoria_por_fecha` (Audit Index)
+#### d) `auditoria_por_fecha` (Índice de Auditoría)
 ```
-Optimized index by date for compliance period queries
-"Show all audits during January 2024"
+Índice optimizado por fecha para consultas de período de cumplimiento
+"Mostrar todas las auditorías durante enero de 2024"
 ```
 
-#### e) `analytics_aprobacion` (Approval Rates)
+#### e) `analytics_aprobacion` (Tasas de Aprobación)
 ```
-Partition: (pais, nivel_educativo)
-Clustering: anio_lectivo (DESC)
+Partición: (pais, nivel_educativo)
+Agrupamiento: anio_lectivo (DESC)
 
-Metrics:
+Métricas:
   - total_calificaciones (COUNTER)
   - total_aprobadas (COUNTER)
   - tasa_aprobacion = aprobadas / total * 100
   
-Example: Argentina, Secondary, 2024
-  - Total grades: 156,000
-  - Passing grades: 131,040
-  - Approval rate: 84%
+Ejemplo: Argentina, Secundario, 2024
+  - Total de calificaciones: 156.000
+  - Calificaciones aprobadas: 131.040
+  - Tasa de aprobación: 84%
 ```
 
-#### f) `distribucion_notas` (Grade Distribution)
+#### f) `distribucion_notas` (Distribución de Calificaciones)
 ```
-Query: What % of students scored 8-9 in CABA Secondary?
-Histogram: [0-3]=2%, [3-6]=8%, [6-7]=15%, [7-8]=25%, [8-9]=35%, [9-10]=15%
+Consulta: ¿Qué porcentaje de estudiantes calificó 8-9 en CABA Secundario?
+Histograma: [0-3]=2%, [3-6]=8%, [6-7]=15%, [7-8]=25%, [8-9]=35%, [9-10]=15%
 
-Use: Quality assurance - bimodal distribution = assessment problems
+Uso: Aseguramiento de calidad - distribución bimodal = problemas de evaluación
 ```
 
-**Capabilities:**
+**Capacidades:**
 ```
-✓ Pre-aggregated analytics (no aggregation jobs needed)
-✓ COUNTER atomic increments (handles concurrent writes)
-✓ TIMEUUID clustering for efficient time-range queries
-✓ Append-only audit (impossible to hide modifications)
-✓ Replication RF=3 for compliance reliability
-✓ 1M+ records without performance degradation
-✓ Instant dimensional filtering by year/region/system
+✓ Análisis pre-agregados (sin necesidad de trabajos de agregación)
+✓ Incrementos COUNTER atómicos (maneja escrituras concurrentes)
+✓ Agrupamiento TIMEUUID para consultas eficientes por rango de tiempo
+✓ Auditoría solo-inserción (imposible ocultar modificaciones)
+✓ Replicación RF=3 para confiabilidad de cumplimiento
+✓ 1M+ registros sin degradación de rendimiento
+✓ Filtrado dimensional instantáneo por año/región/sistema
 ```
 
 **Endpoints:** 12+ (auditoria, reportes, analytics, salud)
 
-**Typical Latency:** < 5ms (pre-aggregated)
+**Latencia Típica:** < 5ms (pre-agregados)
 
 ---
 
-## Data Consistency Model
+## Modelo de Consistencia de Datos
 
-### Dual Persistence Pattern
+### Patrón de Persistencia Dual
 
-When `POST /api/v1/calificaciones` is called:
-
-```
-1. Write to MongoDB (ACID, transactional)
-   └─ INSERT into calificaciones collection
-   
-2. Sync to Neo4j (ACID, graph consistency)
-   └─ MERGE (estudiante)--[TIENE_CALIFICACION]--(materia)
-   
-3. Update Cassandra Analytics (Eventually consistent)
-   ├─ UPDATE reportes_geograficos (COUNTER +1)
-   ├─ UPDATE analytics_aprobacion (COUNTER +1)
-   ├─ UPDATE distribucion_notas (COUNTER +1)
-   └─ APPEND registro_auditoria (immutable, timeuuid)
-
-Result:
-  - MongoDB: Transactional source of truth
-  - Neo4j: Relationship consistency maintained
-  - Cassandra: Analytics immediately ready, audit permanent
-```
-
-### Conversion Application (3-source persistence)
-
-When `POST /api/redis/conversiones/aplicar` is called:
+Cuando se llama a `POST /api/v1/calificaciones`:
 
 ```
-1. Read from Redis cache (hit: <1ms, miss: fallback to MongoDB)
-2. Calculate conversion (1.5 GB → 1.7 AR)
-3. Persist to 3 stores:
+1. Escribir en MongoDB (ACID, transaccional)
+   └─ INSERTAR en colección calificaciones
    
-   a) LPUSH Redis LIST (ephemeral audit, 30d)
-      └─ Fast retrieval for recent conversions
+2. Sincronizar en Neo4j (ACID, consistencia de grafo)
+   └─ FUSIONAR (estudiante)--[TIENE_CALIFICACION]--(materia)
+   
+3. Actualizar Análisis de Cassandra (Eventualmente consistente)
+   ├─ ACTUALIZAR reportes_geograficos (COUNTER +1)
+   ├─ ACTUALIZAR analytics_aprobacion (COUNTER +1)
+   ├─ ACTUALIZAR distribucion_notas (COUNTER +1)
+   └─ ANEXAR registro_auditoria (inmutable, timeuuid)
+
+Resultado:
+  - MongoDB: Fuente de verdad transaccional
+  - Neo4j: Consistencia de relaciones mantenida
+  - Cassandra: Análisis lista de inmediato, auditoría permanente
+```
+
+### Aplicación de Conversión (Persistencia de 3 fuentes)
+
+Cuando se llama a `POST /api/redis/conversiones/aplicar`:
+
+```
+1. Leer desde caché Redis (xito: <1ms, fallo: recurrir a MongoDB)
+2. Calcular conversión (1.5 GB → 1.7 AR)
+3. Persistir en 3 almacenes:
+   
+   a) LPUSH Lista Redis (auditoría efímera, 30d)
+      └─ Recuperación rápida para conversiones recientes
       
-   b) $PUSH MongoDB (persistent conversion log)
-      └─ Long-term storage, original source
+   b) $PUSH MongoDB (registro de conversión persistente)
+      └─ Almacenamiento a largo plazo, fuente original
       
-   c) INSERT Cassandra (immutable compliance log)
-      └─ Permanent, tamper-proof record
+   c) INSERT Cassandra (registro de cumplimiento inmutable)
+      └─ Registro permanente, a prueba de manipulación
 ```
 
 ---
 
-## API Summary
+## Resumen de API
 
-### MongoDB (Port 5000) - 25+ Endpoints
+### MongoDB (Puerto 5000) - 25+ Endpoints
 ```
-Estudiantes:   POST, GET, GET/:id, PUT/:id, DELETE/:id
-Instituciones: POST, GET, GET/:id, PUT/:id, DELETE/:id
-Materias:      POST, GET, GET/:id, PUT/:id, DELETE/:id
-Calificaciones:POST, GET/:id, PUT/:id, DELETE/:id
-Profesores:    POST, GET, GET/:id, PUT/:id, DELETE/:id
-Conversiones:  POST, GET, GET/:id, PUT/:id, DELETE/:id
-Trayectoria:   GET /estudiantes/:id/trayectoria
-Reportes:      GET /reportes/promedios, /reportes/distribucion
-```
-
-### Neo4j (Port 5001) - 12+ Endpoints
-```
-Nodos:         POST /estudiante, /materia, /institucion
-Relaciones:    POST /inscripcion, /cursada, /estudia_en, /pertenece_a
-Trayectoria:   GET /estudiantes/:id/trayectoria
-Estadísticas:  GET /estadisticas/*, /top-materias
+Estudiantes:    POST, GET, GET/:id, PUT/:id, DELETE/:id
+Instituciones:  POST, GET, GET/:id, PUT/:id, DELETE/:id
+Materias:       POST, GET, GET/:id, PUT/:id, DELETE/:id
+Calificaciones: POST, GET/:id, PUT/:id, DELETE/:id
+Profesores:     POST, GET, GET/:id, PUT/:id, DELETE/:id
+Conversiones:   POST, GET, GET/:id, PUT/:id, DELETE/:id
+Trayectoria:    GET /estudiantes/:id/trayectoria
+Reportes:       GET /reportes/promedios, /reportes/distribucion
 ```
 
-### Redis (Port 5002) - 10+ Endpoints
+### Neo4j (Puerto 5001) - 12+ Endpoints
 ```
-Conversiones:  POST /load, POST /aplicar, GET /:codigo, LIST, DELETE
+Nodos:          POST /estudiante, /materia, /institucion
+Relaciones:     POST /inscripcion, /cursada, /estudia_en, /pertenece_a
+Trayectoria:    GET /estudiantes/:id/trayectoria
+Estadísticas:  GET /estadisticas/*, /materias-principal
+```
+
+### Redis (Puerto 5002) - 10+ Endpoints
+```
+Conversiones:   POST /cargar, POST /aplicar, GET /:codigo, LIST, DELETE
 Auditoría:     GET /conversiones/auditoria/:cal_id
-Sesiones:      POST /crear, GET /:session_id, PUT, DELETE, LIST
-Cache:         POST /cachejar, GET /cache/estudiante/:id
-Monitoreo:     GET /estadisticas, /salud
+Sesiones:       POST /crear, GET /:session_id, PUT, DELETE, LIST
+Caché:          POST /cachear, GET /cache/estudiante/:id
+Monitoreo:      GET /estadisticas, /salud
 ```
 
-### Cassandra (Port 5003) - 12+ Endpoints
+### Cassandra (Puerto 5003) - 12+ Endpoints
 ```
 Auditoría:     POST /auditoria, GET /auditoria/estudiante/:id, GET /auditoria?fecha=...
 Geográfico:    POST /reportes/geograficos, GET /reportes/geograficos?region=...
-Sistemas:      POST /reportes/sistemas, GET /reportes/sistemas?sistema=...
-Analytics:     POST /analytics/aprobacion, GET /analytics/aprobacion?pais=...
+Sistemas:       POST /reportes/sistemas, GET /reportes/sistemas?sistema=...
+Análisis:      POST /analytics/aprobacion, GET /analytics/aprobacion?pais=...
 Distribución:  POST /analytics/distribucion, GET /analytics/distribucion?pais=...
-Salud:         GET /salud
+Salud:          GET /salud
 ```
 
 ---
 
-## Performance Characteristics
+## Características de Rendimiento
 
-### At Scale (1M+ Records)
+### A Escala (1M+ Registros)
 
-| Operation | Database | Latency | Throughput | Bottleneck |
+| Operación | Base de Datos | Latencia | Rendimiento | Cuello de Botella |
 |-----------|----------|---------|-----------|-----------|
-| Create grade | MongoDB | 5-10ms | 1000/sec | Disk I/O |
-| Get grade | MongoDB | 2-5ms | 5000/sec | Network |
-| Trayectoria (100 grades) | Neo4j | 30-50ms | 20/sec | Relationship traversal |
-| Apply conversion | Redis/Mongo/Cassandra | 15-25ms | 50-100/sec | Cassandra INSERT |
-| Query geography (10K institutions) | Cassandra | 3-5ms | 1000/sec | Network |
-| Query approval rate | Cassandra | 2-3ms | 10000/sec | COUNTER |
-| Audit trail (1K events) | Cassandra | 20-50ms | 20/sec | Sequential read |
+|-----------|----------|---------|-----------|-----------|
+| Crear calificación | MongoDB | 5-10ms | 1000/seg | E/S de disco |
+| Obtener calificación | MongoDB | 2-5ms | 5000/seg | Red |
+| Trayectoria (100 calificaciones) | Neo4j | 30-50ms | 20/seg | Recorrido de relaciones |
+| Aplicar conversión | Redis/Mongo/Cassandra | 15-25ms | 50-100/seg | INSERT de Cassandra |
+| Consultar geografía (10K instituciones) | Cassandra | 3-5ms | 1000/seg | Red |
+| Consultar tasa de aprobación | Cassandra | 2-3ms | 10000/seg | COUNTER |
+| Registro de auditoría (1K eventos) | Cassandra | 20-50ms | 20/seg | Lectura secuencial |
 
-### Storage Efficiency
+### Eficiencia de Almacenamiento
 
 ```
 MongoDB calificaciones:
-  - Typical document size: 2KB
-  - 1M records: 2GB + indexes
+  - Tamaño de documento típico: 2KB
+  - 1M registros: 2GB + índices
 
-Neo4j graph:
-  - Nodes: 1K estudiantes, 500 materias, 100 institutions → ~50MB
-  - Relationships: 100K INSCRIPTO_EN, 500K CURSÓ → ~200MB
+Neo4j grafo:
+  - Nodos: 1K estudiantes, 500 materias, 100 instituciones → ~50MB
+  - Relaciones: 100K INSCRIPTO_EN, 500K CURSÓ → ~200MB
   - Total: 250MB
 
-Redis cache:
-  - 8 conversion rules: 50KB
-  - 10 active sessions: 20KB
-  - 1K audit entries: 100KB
-  - Total: 170KB (ephemeral)
+Caché Redis:
+  - 8 reglas de conversión: 50KB
+  - 10 sesiones activas: 20KB
+  - 1K entradas de auditoría: 100KB
+  - Total: 170KB (efímero)
 
-Cassandra analytics:
-  - reportes_geograficos: 10K rows × 100 bytes = 1MB
-  - reportes_sistemas: 5K rows × 80 bytes = 400KB
-  - registro_auditoria: 1M rows × 150 bytes = 150MB ← Grows indefinitely
-  - Total: ~150MB (10 years of audit history)
+Análisis de Cassandra:
+  - reportes_geograficos: 10K filas × 100 bytes = 1MB
+  - reportes_sistemas: 5K filas × 80 bytes = 400KB
+  - registro_auditoria: 1M filas × 150 bytes = 150MB ← Crece indefinidamente
+  - Total: ~150MB (10 años de historial de auditoría)
 ```
 
 ---
 
-## Security & Compliance
+## Seguridad y Cumplimiento
 
-### Immutability Guarantees (Cassandra)
+### Garantías de Inmutabilidad (Cassandra)
 
 ```
-Attempt 1: Direct corruption
-  ┌─ Cassandra node 1: Record OK
-  ├─ Cassandra node 2: Record OK
-  └─ Cassandra node 3: Record MODIFIED
+Intento 1: Corrupción directa
+  ┌─ Nodo Cassandra 1: Registro OK
+  ├─ Nodo Cassandra 2: Registro OK
+  └─ Nodo Cassandra 3: Registro MODIFICADO
   
-  Result: LEADER ELECTION - Accept 2/3 nodes (majority rules)
-  Outcome: Tampering DETECTED ✗
+Resultado: ELECCIÓN DE LÍDER - Aceptar 2/3 nodos (la mayoría gobierna)
+Resultado: Manipulación DETECTADA ✗
 
-Attempt 2: Modify all 3 replicas
-  └─ Would require breaking into 3 separate servers
-  └─ Plus circumventing replication protocol
-  └─ Plus avoiding write-ahead logs
+Intento 2: Modificar las 3 replicas
+  └─ Requiere romper en 3 servidores separados
+  └─ Más evitar el protocolo de replicación
+  └─ Más evitar logs de escritura previa
   
-  Outcome: Effectively impossible for distributed system ✓
+Resultado: Efectivamente imposible para sistema distribuido ✓
 
-Attempt 3: SQL injection
-  └─ Using parameterized queries throughout
-  └─ All user input validated/sanitized
-  └─ No string interpolation in CQL
+Intento 3: Inyección SQL
+  └─ Usar consultas parametrizadas en toda la aplicación
+  └─ Toda entrada del usuario validada/sanitizada
+  └─ Sin interpolación de cadenas en CQL
   
-  Outcome: Protected ✓
+Resultado: Protegido ✓
 ```
 
-### Hash Integrity (SHA256)
+### Integridad de Hash (SHA256)
 
-Each audit record includes `hash_integridad`:
+Cada registro de auditoría incluye `hash_integridad`:
 ```python
 hash_integridad = SHA256({
     "id_estudiante": "...",
@@ -444,136 +445,136 @@ hash_integridad = SHA256({
 })
 ```
 
-If data is modified, hash won't match:
-- Manual tampering: Hash mismatch detected
-- Access logs: Who accessed and when
-- Backup recovery: Original state preserved
+Si los datos se modifican, el hash no coincidirá:
+- Manipulación manual: Desajuste de hash detectado
+- Registros de acceso: Quién accedió y cuándo
+- Recuperación de copia de seguridad: Estado original preservado
 
-### Regulatory Compliance
+### Cumplimiento Normativo
 
 ```
-✓ GDPR: Easy to retrieve/export all data on student (TIMEUUID ordering)
-✓ FERPA: Audit trail shows who accessed what (usuario_auditor)
-✓ Immutability: Cannot hide or modify historical records
-✓ Retention: Long-term storage in Cassandra (can set TTL if needed)
-✓ Encryption: TLS transport, optional at-rest encryption
-✓ Backups: Cassandra snapshots are consistent (append-only)
+✓ GDPR: Fácil de recuperar/exportar todos los datos del estudiante (orden TIMEUUID)
+✓ FERPA: Registro de auditoría muestra quién accedió a qué (usuario_auditor)
+✓ Inmutabilidad: No se pueden ocultar ni modificar registros históricos
+✓ Retención: Almacenamiento a largo plazo en Cassandra (se puede establecer TTL si es necesario)
+✓ Cifrado: Transporte TLS, cifrado en reposo opcional
+✓ Copias de seguridad: Las instantáneas de Cassandra son consistentes (solo-inserción)
 ```
 
 ---
 
-## Files Created/Modified
+## Archivos Creados/Modificados
 
-### New Files
+### Archivos Nuevos
 
 ```
-docker/cassandra/api_cassandra.py       (720 lines)
-  ├─ Table initialization
-  ├─ Auditoria endpoints (INSERT, GET by student, GET by date)
-  ├─ Analytics endpoints (geographic, systems, approval, distribution)
-  └─ Health check
+docker/cassandra/api_cassandra.py       (720 líneas)
+  ├─ Inicialización de tabla
+  ├─ Endpoints de auditoría (INSERT, GET por estudiante, GET por fecha)
+  ├─ Endpoints de análisis (geográfico, sistemas, aprobación, distribución)
+  └─ Verificación de estado
 
-docker/cassandra/entities.py            (520 lines)
-  ├─ Data model documentation
-  ├─ Query patterns
-  ├─ Integrity guarantees
-  ├─ Performance characteristics
-  └─ Operational guidelines
+docker/cassandra/entities.py            (520 líneas)
+  ├─ Documentación de modelo de datos
+  ├─ Patrones de consulta
+  ├─ Garantías de integridad
+  ├─ Características de rendimiento
+  └─ Directrices operacionales
 
-CASSANDRA_INTEGRATION.md                (400 lines)
-  ├─ System architecture
-  ├─ Table specifications
-  ├─ Integration points
-  ├─ API endpoints
-  ├─ Deployment guide
-  └─ Monitoring & troubleshooting
+CASSANDRA_INTEGRATION.md                (400 líneas)
+  ├─ Arquitectura del sistema
+  ├─ Especificaciones de tabla
+  ├─ Puntos de integración
+  ├─ Endpoints de API
+  ├─ Guía de implementación
+  └─ Monitoreo y solución de problemas
 
-API_REFERENCE.md                        (500 lines)
-  ├─ Complete API specification (all 50+ endpoints)
-  ├─ Request/response examples
-  ├─ Data flow examples
-  ├─ Integration scenarios
-  └─ Development guide
+API_REFERENCE.md                        (500 líneas)
+  ├─ Especificación de API completa (50+ endpoints)
+  ├─ Ejemplos de solicitud/respuesta
+  ├─ Ejemplos de flujo de datos
+  ├─ Escenarios de integración
+  └─ Guía de desarrollo
 
-test_end_to_end.py                      (400 lines)
-  ├─ 10-step complete workflow
-  ├─ Creates institution → student → grade
-  ├─ Applies conversion
-  ├─ Verifies all systems synchronized
-  └─ Exits with verification report
+test_end_to_end.py                      (400 líneas)
+  ├─ Flujo completo de 10 pasos
+  ├─ Crea institución → estudiante → calificación
+  ├─ Aplica conversión
+  ├─ Verifica sincronización de todos los sistemas
+  └─ Sale con informe de verificación
 ```
 
-### Modified Files
+### Archivos Modificados
 
 ```
 app/endpoint-mongo.py
-  ├─ Added Cassandra initialization (set_keyspace)
-  ├─ Updated POST /calificaciones to write to Cassandra
-  ├─ Writes reportes_geograficos (geographic analytics)
-  ├─ Writes analytics_aprobacion (approval tracking)
-  ├─ Writes registro_auditoria (immutable audit)
-  └─ Implementations: registrar_auditoria_cassandra()
+  ├─ Añadida inicialización de Cassandra (set_keyspace)
+  ├─ Actualizado POST /calificaciones para escribir en Cassandra
+  ├─ Escribe reportes_geograficos (análisis geográfico)
+  ├─ Escribe analytics_aprobacion (seguimiento de aprobación)
+  ├─ Escribe registro_auditoria (auditoría inmutable)
+  └─ Implementaciones: registrar_auditoria_cassandra()
 
 docker/redis/api_redis.py
-  ├─ Added Cassandra cluster connection
-  ├─ Updated POST /conversiones/aplicar
-  ├─ Writes reportes_sistemas (conversion effectiveness)
-  ├─ Writes registro_auditoria (immutable conversion log)
-  └─ Imports: timeuuid, calcular_hash_integridad()
+  ├─ Añadida conexión de clúster de Cassandra
+  ├─ Actualizado POST /conversiones/aplicar
+  ├─ Escribe reportes_sistemas (efectividad de conversión)
+  ├─ Escribe registro_auditoria (registro inmutable de conversión)
+  └─ Importaciones: timeuuid, calcular_hash_integridad()
 ```
 
 ---
 
-## Deployment Instructions
+## Instrucciones de Despliegue
 
-### Prerequisites
+### Requisitos Previos
 ```bash
 Docker, Docker Compose, Python 3.8+
 ```
 
-### Quick Start
+### Inicio Rápido
 ```bash
-# Start all services
+# Inicia todos los servicios
 docker-compose up -d
 
-# Initialize cassandra (automatic via api_cassandra.py before_first_request)
+# Inicializa cassandra (automático vía api_cassandra.py before_first_request)
 python docker/cassandra/api_cassandra.py
 
-# Verify all healthy
+# Verifica que estén saludables
 curl http://localhost:5000/api/v1/salud     # MongoDB
 curl http://localhost:5001/api/neo4j/salud  # Neo4j
 curl http://localhost:5002/api/redis/salud  # Redis
 curl http://localhost:5003/api/cassandra/salud  # Cassandra
 ```
 
-### Run End-to-End Tests
+### Ejecutar Pruebas de Extremo a Extremo
 ```bash
 python test_end_to_end.py
 
-# Output:
+# Salida:
 # ════════════════════════════════════════════════════════════════════
-#   EduGrade Multi-Database End-to-End Test Suite
-#   Complete workflow: Create → Grade → Convert → Audit
+#   Suite de Prueba de Extremo a Extremo Multi-Base de Datos EduGrade
+#   Flujo completo: Crear → Calificar → Convertir → Auditar
 # ════════════════════════════════════════════════════════════════════
 #
-# [Step 1] Create Institution... ✓
-# [Step 2] Create Subject... ✓
-# [Step 3] Create Student... ✓
-# [Step 4] Register Grade (MongoDB → Neo4j → Cassandra cascade)... ✓
-# [Step 5] Load Conversion to Redis cache... ✓
-# [Step 6] Apply Conversion (Redis → Mongo → Cassandra)... ✓
-# [Step 7] View Conversion Audit (Redis LIST)... ✓
-# [Step 8] View Immutable Audit (Cassandra)... ✓
-# [Step 9] View Geographic Analytics (Cassandra)... ✓
+# [Paso 1] Crear Institución... ✓
+# [Paso 2] Crear Asignatura... ✓
+# [Paso 3] Crear Estudiante... ✓
+# [Paso 4] Registrar Calificación (MongoDB → Neo4j → cascada Cassandra)... ✓
+# [Paso 5] Cargar Conversión en caché Redis... ✓
+# [Paso 6] Aplicar Conversión (Redis → Mongo → Cassandra)... ✓
+# [Paso 7] Ver Auditoría de Conversión (Redis LIST)... ✓
+# [Paso 8] Ver Auditoría Inmutable (Cassandra)... ✓
+# [Paso 9] Ver Análisis Geográfico (Cassandra)... ✓
 #
-# FINAL REPORT: All Systems Synchronized ✓
+# INFORME FINAL: Todos los Sistemas Sincronizados ✓
 ```
 
 ---
 
-## Usage Examples
+## Ejemplos de Uso
 
-### Example 1: Student Records Grade
+### Ejemplo 1: Estudiante Registra Calificación
 ```bash
 POST /api/v1/calificaciones
 {
@@ -583,16 +584,16 @@ POST /api/v1/calificaciones
   "anio_lectivo": 2024
 }
 
-# Cascades to:
-#   ✓ MongoDB: stored in calificaciones
-#   ✓ Neo4j: TIENE_CALIFICACION relationship
-#   ✓ Cassandra: reportes_geograficos (counters)
-#   ✓ Cassandra: analytics_aprobacion (approval stats)
-#   ✓ Cassandra: distribucion_notas (grade range histogram)
-#   ✓ Cassandra: registro_auditoria (immutable audit)
+# Se propaga en cascada a:
+#   ✓ MongoDB: almacenado en calificaciones
+#   ✓ Neo4j: relación TIENE_CALIFICACION
+#   ✓ Cassandra: reportes_geograficos (contadores)
+#   ✓ Cassandra: analytics_aprobacion (estadísticas de aprobación)
+#   ✓ Cassandra: distribucion_notas (histograma de rango de calificaciones)
+#   ✓ Cassandra: registro_auditoria (auditoría inmutable)
 ```
 
-### Example 2: Apply Grade Conversion
+### Ejemplo 2: Aplicar Conversión de Calificación
 ```bash
 POST /api/redis/conversiones/aplicar
 {
@@ -601,32 +602,32 @@ POST /api/redis/conversiones/aplicar
   "convertido_por": "usuario_123"
 }
 
-# Cascades to:
-#   ✓ Redis LIST: conversion_audit (ephemeral, 30d)
+# Se propaga en cascada a:
+#   ✓ Redis LIST: conversion_audit (efímero, 30d)
 #   ✓ MongoDB: calificaciones.conversiones_aplicadas
-#   ✓ Cassandra: reportes_sistemas (conversion effectiveness)
-#   ✓ Cassandra: registro_auditoria (immutable log)
+#   ✓ Cassandra: reportes_sistemas (efectividad de conversión)
+#   ✓ Cassandra: registro_auditoria (registro inmutable)
 ```
 
-### Example 3: Regulatory Audit Query
+### Ejemplo 3: Consulta Regulatoria de Auditoría
 ```bash
 GET /api/cassandra/auditoria?fecha_inicio=2024-01-01&fecha_fin=2024-01-31
 
-# Returns all audit events during January with:
-#   - hash_integridad: SHA256 for tampering detection
+# Devuelve todos los eventos de auditoría durante enero con:
+#   - hash_integridad: SHA256 para detección de manipulación
 #   - tipo_accion: CALIFICACION_REGISTRADA | CONVERSION_APLICADA
-#   - usuario_auditor: Who made the change
-#   - id_auditoria: TIMEUUID for global ordering
-#   - fecha_creacion: TIMESTAMP with DESC clustering
+#   - usuario_auditor: Quién realizó el cambio
+#   - id_auditoria: TIMEUUID para ordenamiento global
+#   - fecha_creacion: TIMESTAMP con agrupamiento DESC
 #
-# Guarantee: IMMUTABLE - impossible to modify or delete
+# Garantía: INMUTABLE - imposible de modificar o eliminar
 ```
 
-### Example 4: Geographic Performance Analysis
+### Ejemplo 4: Análisis de Desempeño Geográfico
 ```bash
 GET /api/cassandra/reportes/geograficos?region=CABA&anio_lectivo=2024
 
-# Returns:
+# Devuelve:
 # {
 #   "region": "CABA",
 #   "total_instituciones": 45,
@@ -640,93 +641,93 @@ GET /api/cassandra/reportes/geograficos?region=CABA&anio_lectivo=2024
 #   ]
 # }
 #
-# Latency: <5ms (pre-aggregated COUNTER)
-# Scales to 1M+ records without degradation
+# Latencia: <5ms (COUNTER pre-agregado)
+# Escala a 1M+ registros sin degradación
 ```
 
 ---
 
-## Key Achievements Summary
+## Resumen de Logros Clave
 
-### ✅ Completeness
-- [x] All 5 databases integrated
-- [x] 50+ REST API endpoints
-- [x] Cascade writes (grade → neo4j + cassandra)
-- [x] Dual persistence (conversion → redis + mongo + cassandra)
-- [x] Documentation (4 markdown files)
+### ✅ Completitud
+- [x] Las 5 bases de datos integradas
+- [x] 50+ puntos finales de API REST
+- [x] Escrituras en cascada (calificación → neo4j + cassandra)
+- [x] Persistencia dual (conversión → redis + mongo + cassandra)
+- [x] Documentación (4 archivos markdown)
 
-### ✅ Performance
-- [x] <5ms analytics queries on 1M+ records
-- [x] <1ms Redis cache hits
-- [x] <50ms trayectoria reconstruction
-- [x] COUNTER pre-aggregation eliminating batch jobs
+### ✅ Rendimiento
+- [x] <5ms consultas analíticas en 1M+ registros
+- [x] <1ms aciertos en caché Redis
+- [x] <50ms reconstrucción de trayectoria
+- [x] Pre-agregación COUNTER eliminando trabajos por lotes
 
-### ✅ Compliance & Audit
-- [x] Immutable audit trail (append-only)
-- [x] TIMEUUID global ordering
-- [x] SHA256 integrity hashing
-- [x] Replication RF=3 tamper-proof storage
-- [x] Full trazabilidad of all transactions
+### ✅ Cumplimiento y Auditoría
+- [x] Registro de auditoría inmutable (solo-inserción)
+- [x] Ordenamiento global TIMEUUID
+- [x] Hash de integridad SHA256
+- [x] Almacenamiento a prueba de manipulación con RF=3
+- [x] Trazabilidad completa de todas las transacciones
 
-### ✅ Scalability
-- [x] Partition keys optimized (region, sistema, país)
-- [x] Clustering keys enable range queries
-- [x] COUNTER handles concurrent writes atomically
-- [x] Tested patterns support 1M+ records
+### ✅ Escalabilidad
+- [x] Claves de partición optimizadas (región, sistema, país)
+- [x] Las claves de agrupamiento permiten consultas de rango
+- [x] COUNTER maneja escrituras concurrentes atómicamente
+- [x] Patrones probados soportan 1M+ registros
 
-### ✅ Developer Experience
-- [x] Clear API reference (50+ endpoints documented)
-- [x] End-to-end test script (10 steps, instant verification)
-- [x] Data entity documentation (models & patterns)
-- [x] Integration guide (how components interact)
-
----
-
-## Next Steps (Optional Enhancements)
-
-### Short-term
-1. **Add encryption at rest** (cassandra.yaml)
-2. **Add TLS transport** between services
-3. **Implement role-based access control** (RBAC)
-4. **Add rate limiting** to API endpoints
-5. **Deploy to Kubernetes** instead of Docker Compose
-
-### Medium-term
-1. **Add machine learning** for student performance prediction
-2. **Implement background jobs** for conversion batch processing
-3. **Add real-time notifications** (WebSocket) for grade changes
-4. **Implement multi-tenancy** (separate keyspaces per institution)
-5. **Add PDF export** of transcripts with audit trail
-
-### Long-term
-1. **Migrate to distributed MongoDB** (sharded cluster)
-2. **Implement CDC (Change Data Capture)** for Cassandra
-3. **Add Elasticsearch** for full-text search on trayectorias
-4. **Implement GraphQL gateway** for flexible querying
-5. **Add blockchain verification** for tamper-proof compliance (optional)
+### ✅ Experiencia del Desarrollador
+- [x] Referencia clara de API (50+ endpoints documentados)
+- [x] Script de extremo a extremo (10 pasos, verificación instantánea)
+- [x] Documentación de entidades de datos (modelos y patrones)
+- [x] Guía de integración (cómo interactúan los componentes)
 
 ---
 
-## Support & Reference
+## Próximos Pasos (Mejoras Opcionales)
 
-### Key Documents
-- `CASSANDRA_INTEGRATION.md` - Cassandra-specific architecture
-- `API_REFERENCE.md` - Complete 50+ endpoint reference
-- `docker/cassandra/entities.py` - Data model documentation
-- `test_end_to_end.py` - Working end-to-end examples
+### Corto Plazo
+1. **Añadir cifrado en reposo** (cassandra.yaml)
+2. **Añadir transporte TLS** entre servicios
+3. **Implementar control de acceso basado en roles** (RBAC)
+4. **Añadir limitación de tasa** a los puntos finales de API
+5. **Desplegar en Kubernetes** en lugar de Docker Compose
 
-### Quick Links
+### Plazo Medio
+1. **Añadir aprendizaje automático** para predicción de desempeño de estudiantes
+2. **Implementar trabajos en segundo plano** para procesamiento por lotes de conversión
+3. **Añadir notificaciones en tiempo real** (WebSocket) para cambios de calificaciones
+4. **Implementar multi-tenencia** (espacios de claves separados por institución)
+5. **Añadir exportación a PDF** de transcripciones con registro de auditoría
+
+### Largo Plazo
+1. **Migrar a MongoDB distribuida** (clúster fragmentado)
+2. **Implementar CDC (Captura de Cambios de Datos)** para Cassandra
+3. **Añadir Elasticsearch** para búsqueda de texto completo en trayectorias
+4. **Implementar puerta de enlace GraphQL** para consultas flexibles
+5. **Añadir verificación de blockchain** para cumplimiento a prueba de manipulación (opcional)
+
+---
+
+## Soporte y Referencia
+
+### Documentos Clave
+- `CASSANDRA_INTEGRATION.md` - Arquitectura específica de Cassandra
+- `API_REFERENCE.md` - Referencia completa de 50+ puntos finales
+- `docker/cassandra/entities.py` - Documentación del modelo de datos
+- `test_end_to_end.py` - Ejemplos de trabajo de extremo a extremo
+
+### Enlaces Rápidos
 ```bash
-# Test the system
+# Prueba el sistema
 python test_end_to_end.py
 
-# View single database
+# Ver base de datos individual
 curl http://localhost:5000/api/v1/salud  # MongoDB
 curl http://localhost:5001/api/neo4j/salud  # Neo4j
 curl http://localhost:5002/api/redis/salud  # Redis
 curl http://localhost:5003/api/cassandra/salud  # Cassandra
 
-# View logs
+# Ver registros
 docker logs edugrade_mongo
 docker logs edugrade_neo4j
 docker logs edugrade_redis
@@ -735,20 +736,20 @@ docker logs edugrade_cassandra
 
 ---
 
-## Conclusion
+## Conclusión
 
-The EduGrade system is a **production-ready, multi-database educational platform** that successfully integrates:
+El sistema EduGrade es una **plataforma educativa multi-base de datos lista para producción** que integra exitosamente:
 
-1. **MongoDB** for transactional storage
-2. **Neo4j** for relationship queries
-3. **Redis** for caching and sessions
-4. **Cassandra** for analytics and compliance
+1. **MongoDB** para almacenamiento transaccional
+2. **Neo4j** para consultas de relaciones
+3. **Redis** para almacenamiento en caché y sesiones
+4. **Cassandra** para análisis y cumplimiento
 
-All components work together seamlessly with **cascade writes, dual persistence, immutable audit trails, and performance optimization** for handling 1M+ records without degradation.
+Todos los componentes trabajan juntos sin problemas con **escrituras en cascada, persistencia dual, registros de auditoría inmutables y optimización de rendimiento** para manejar 1M+ registros sin degradación.
 
-The system is **fully documented, tested, and ready for deployment**.
+El sistema es **completamente documentado, probado y listo para despliegue**.
 
 ---
 
-*Implementation completed: June 2024*
-*Last updated: 2024-06-20*
+*Implementación completada: Junio 2024*
+*Última actualización: 2024-06-20*
