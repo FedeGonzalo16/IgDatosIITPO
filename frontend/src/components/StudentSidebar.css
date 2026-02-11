@@ -1,8 +1,7 @@
 .student-sidebar {
-  position: fixed;
-  left: 0;
-  top: 80px;
-  width: 280px;
+  /* CAMBIO CLAVE: Usamos sticky en lugar de fixed para que respete el CSS Grid */
+  position: sticky;
+  top: 80px; /* Justo debajo del Navbar */
   height: calc(100vh - 80px);
   background: white;
   border-right: 2px solid #e0e0e0;
@@ -17,8 +16,8 @@
 .sidebar-toggle {
   display: none;
   position: fixed;
-  top: 90px;
-  left: 20px;
+  top: 95px;
+  left: 15px;
   z-index: 110;
   background: white;
   border: 2px solid #667eea;
@@ -27,6 +26,7 @@
   cursor: pointer;
   color: #667eea;
   transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .sidebar-toggle:hover {
@@ -169,11 +169,9 @@
   box-shadow: 0 4px 12px rgba(204, 51, 51, 0.2);
 }
 
-/* Responsive */
+/* === Responsive (Tablet & Móvil) === */
 @media screen and (max-width: 1024px) {
-  .student-sidebar {
-    width: 240px;
-  }
+  /* Dejamos que el Grid se encargue del ancho */
 }
 
 @media screen and (max-width: 768px) {
@@ -183,92 +181,29 @@
     align-items: center;
   }
 
+  /* El Sidebar pasa a ser un menú deslizante tipo Drawer */
   .student-sidebar {
     position: fixed;
     left: 0;
     top: 80px;
-    width: 100%;
-    height: auto;
-    max-height: calc(100vh - 80px);
+    width: 280px; 
+    height: calc(100vh - 80px);
     border-right: none;
-    border-bottom: 2px solid #e0e0e0;
-    flex-direction: row;
-    display: flex;
-    align-items: center;
-    padding: 0;
-    transform: translateX(-100%);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    flex-direction: column;
+    padding-top: 60px; /* Para no taparlo con el botón flotante */
+    transform: translateX(-100%); /* Oculto por defecto */
+    box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
   }
 
   .student-sidebar.mobile-open {
-    transform: translateX(0);
+    transform: translateX(0); /* Mostrar */
   }
 
   .sidebar-overlay.mobile-open {
     display: block;
   }
 
-  .sidebar-overlay {
-    display: block;
-  }
-
-  .sidebar-header {
-    display: none;
-  }
-
   .sidebar-nav {
-    flex-direction: row;
-    width: 100%;
-    padding: 10px;
-    gap: 5px;
-    overflow-x: auto;
-  }
-
-  .sidebar-menu-item {
-    padding: 10px 12px;
-    font-size: 0.85rem;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .sidebar-menu-item svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  .menu-label {
-    display: none;
-  }
-
-  .sidebar-menu-item.active .menu-label {
-    display: inline;
-  }
-
-  .sidebar-divider {
-    display: none;
-  }
-
-  .sidebar-logout {
-    display: none;
-  }
-}
-
-@media screen and (max-width: 480px) {
-  .student-sidebar {
-    width: 100%;
-  }
-
-  .sidebar-nav {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .sidebar-menu-item {
-    width: calc(100% - 20px);
-    margin: 0 10px;
-  }
-
-  .menu-label {
-    display: inline;
+    overflow-y: auto;
   }
 }

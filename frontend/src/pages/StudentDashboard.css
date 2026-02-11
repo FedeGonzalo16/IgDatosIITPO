@@ -10,8 +10,10 @@
   overflow-y: auto;
   max-height: calc(100vh - 80px);
   animation: fadeIn 0.3s ease-in;
+  min-width: 0; /* Corrección para evitar desbordamiento */
 }
 
+/* ESTILOS ORIGINALES INTACTOS A PARTIR DE AQUÍ */
 .dashboard-main {
   padding: 40px;
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
@@ -197,17 +199,24 @@
   color: #666;
 }
 
+/* RESPONSIVE ORIGINAL CORREGIDO PARA QUE NO SE ROMPA EL GRID */
+@media screen and (max-width: 1024px) {
+  .student-dashboard-layout {
+    grid-template-columns: 240px 1fr;
+  }
+}
+
 @media screen and (max-width: 768px) {
   .student-dashboard-layout {
     grid-template-columns: 1fr;
   }
 
   .dashboard-content {
-    max-height: calc(100vh - 140px);
+    max-height: calc(100vh - 80px);
   }
 
   .dashboard-main {
-    padding: 20px;
+    padding: 60px 20px 20px 20px;
   }
 
   .dashboard-header h1 {

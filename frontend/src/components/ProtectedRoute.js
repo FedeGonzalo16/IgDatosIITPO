@@ -6,7 +6,6 @@ const ProtectedRoute = ({ children, user, role, onLogout }) => {
     return <Navigate to="/login" replace />;
   }
 
-  // Verificar rol si se especifica
   if (role && user.rol !== role) {
     return (
       <div style={{
@@ -24,7 +23,8 @@ const ProtectedRoute = ({ children, user, role, onLogout }) => {
     );
   }
 
-  return children;
+  // Pasar props user y onLogout al componente hijo
+  return React.cloneElement(children, { user, onLogout });
 };
 
 export default ProtectedRoute;
