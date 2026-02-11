@@ -1,5 +1,5 @@
 P1: Checkear los entities.py
-P2: Reordenar mongo/ archivos en general
+P2: Reordenar mongo/ archivos en general - Pasar back a carpeta backend y crear una de Frontend
 P3: Resolver anotaciones ----------->
 
 Redis:
