@@ -1,67 +1,74 @@
-from src.config.database import get_mongo, get_neo4j, get_cassandra
-from bson import ObjectId
-from datetime import datetime
-import uuid
+from src.config.database import get_neo4j, get_cassandra
 
 class GradingService:
+    
     @staticmethod
-    def registrar_calificacion(data):
-        db = get_mongo()
-        est_id = data['estudiante_id']
-        mat_id = data['materia_id']
-        nota_val = data['valor_original'] # Dict {nota: 9, tipo: FINAL}
-
-        # 1. Mongo
-        doc = {
-            "estudiante_id": ObjectId(est_id),
-            "materia_id": ObjectId(mat_id),
-            "valor_original": nota_val,
-            "fecha": datetime.utcnow(),
-            "metadata": {"estado": "DEFINITIVA"}
-        }
-        res = db.calificaciones.insert_one(doc)
-        calif_id = str(res.inserted_id)
-
-        # 2. Neo4j: Nota en la relación
-        try:
-            with get_neo4j() as session:
-                session.run("""
-                    MATCH (e:Estudiante {id_mongo: $est_id})
-                    MATCH (m:Materia {id_mongo: $mat_id})
-                    MERGE (e)-[r:CURSO]->(m)
-                    SET r.nota = $nota, 
-                        r.id_calificacion = $cid,
-                        r.fecha = datetime()
-                """, est_id=est_id, mat_id=mat_id, nota=nota_val.get('nota'), cid=calif_id)
-        except Exception as e:
-            print(f"[SYNC ERROR] Neo4j: {e}")
-
-        # 3. Cassandra: Auditoría
-        GradingService._audit_cassandra(est_id, "CALIFICACION_REGISTRADA", 
-                                      str(nota_val.get('nota')), f"Materia {mat_id}")
-        
-        return calif_id
+    def inscribir_alumno(est_id, mat_id, anio_lectivo):
+        """Crea una NUEVA relación CURSANDO. No sobreescribe si recursa."""
+        with get_neo4j() as session:
+            session.run("""
+                MATCH (e:Estudiante {id_mongo: $est_id})
+                MATCH (m:Materia {id_mongo: $mat_id})
+                // Usamos CREATE en lugar de MERGE para permitir recursadas múltiples
+                CREATE (e)-[r:CURSANDO {
+                    anio: $anio,
+                    estado: 'EN_CURSO'
+                }]->(m)
+            """, est_id=est_id, mat_id=mat_id, anio=anio_lectivo)
+        return True
 
     @staticmethod
-    def _audit_cassandra(est_id, accion, nota, desc):
-        session = get_cassandra()
-        if session:
-            try:
-                session.execute("""
-                    INSERT INTO registro_auditoria 
-                    (id_estudiante, fecha_creacion, id_auditoria, tipo_accion, nota_original, descripcion)
-                    VALUES (%s, toTimestamp(now()), uuid(), %s, %s, %s)
-                """, (est_id, accion, nota, desc))
-            except Exception as e:
-                print(f"[SYNC ERROR] Cassandra: {e}")
+    def cargar_nota(est_id, mat_id, tipo_nota, valor):
+        """
+        tipos permitidos: 'primer_parcial', 'segundo_parcial', 'final', 'previo'
+        """
+        # 1. Actualizar SOLO en Neo4j
+        query = f"""
+            MATCH (e:Estudiante {{id_mongo: $est_id}})-[r:CURSANDO]->(m:Materia {{id_mongo: $mat_id}})
+            SET r.{tipo_nota} = $valor
+            RETURN r
+        """
+        with get_neo4j() as session:
+            session.run(query, est_id=est_id, mat_id=mat_id, valor=valor)
+
+        # 2. Auditoría en Cassandra (Opcional pero recomendado para el TPO)
+        session_cass = get_cassandra()
+        if session_cass:
+            session_cass.execute("""
+                INSERT INTO registro_auditoria (id_estudiante, fecha_creacion, id_auditoria, tipo_accion, nota_original)
+                VALUES (%s, toTimestamp(now()), uuid(), %s, %s)
+            """, (est_id, f"CARGA_{tipo_nota.upper()}", str(valor)))
+            
+        return True
 
     @staticmethod
-    def get_historial_estudiante(est_id):
-        # Combina Mongo (detalle) + Neo4j (trayectoria visual)
-        db = get_mongo()
-        califs = list(db.calificaciones.find({"estudiante_id": ObjectId(est_id)}))
-        for c in califs:
-            c['_id'] = str(c['_id'])
-            c['estudiante_id'] = str(c['estudiante_id'])
-            c['materia_id'] = str(c['materia_id'])
-        return califs
+    def cerrar_cursada(est_id, mat_id):
+        """
+        Evalúa las notas. Si desaprobó el final y no tiene previo (o reprobó previo),
+        cambia la relación de CURSANDO a CURSÓ con estado REPROBADO o APROBADO.
+        """
+        with get_neo4j() as session:
+            # En Neo4j no se puede renombrar una relación. Se crea una nueva, se copian propiedades y se borra la vieja.
+            session.run("""
+                MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSANDO]->(m:Materia {id_mongo: $mat_id})
+                
+                // Lógica de aprobación: Necesita final >= 6 o previo >= 6
+                WITH e, m, r, 
+                     CASE 
+                        WHEN r.final >= 6 THEN 'APROBADO'
+                        WHEN r.previo >= 6 THEN 'APROBADO'
+                        ELSE 'REPROBADO'
+                     END as estado_final
+                
+                // Creamos la nueva relación histórica
+                CREATE (e)-[r2:CURSÓ]->(m)
+                
+                // Copiamos todas las notas al historial
+                SET r2 = properties(r),
+                    r2.estado = estado_final,
+                    r2.fecha_cierre = datetime()
+                
+                // Borramos la relación activa
+                DELETE r
+            """, est_id=est_id, mat_id=mat_id)
+        return True

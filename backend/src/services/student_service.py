@@ -1,33 +1,29 @@
 from src.config.database import get_mongo, get_neo4j
 from bson import ObjectId
 from datetime import datetime
+from src.services.metadata_service import MetadataService
 
 class StudentService:
     @staticmethod
     def create(data):
         db = get_mongo()
-        # 1. Mongo
+        # 1. Mongo (LIMPIO, SIN METADATOS)
         doc = {
             "legajo": data['legajo'],
             "nombre": data['nombre'],
             "apellido": data['apellido'],
-            "email": data.get('email', ''),
-            "pais": data.get('pais', 'AR'),
-            "metadata": {"created_at": datetime.utcnow(), "estado": "ACTIVO"}
+            "email": data.get('email', '')
         }
         res = db.estudiantes.insert_one(doc)
         mongo_id = str(res.inserted_id)
 
-        # 2. Neo4j Sync
-        try:
-            with get_neo4j() as session:
-                session.run("""
-                    MERGE (e:Estudiante {id_mongo: $id})
-                    SET e.legajo = $legajo, e.nombre = $nombre, e.pais = $pais
-                """, id=mongo_id, legajo=data['legajo'], 
-                   nombre=f"{data['nombre']} {data['apellido']}", pais=data.get('pais', 'AR'))
-        except Exception as e:
-            print(f"[SYNC ERROR] Neo4j: {e}")
+        # 2. Metadatos EXCLUSIVOS en Cassandra
+        MetadataService.save_metadata('estudiante', mongo_id, 'ACTIVO')
+
+        # 3. Neo4j Sync
+        with get_neo4j() as session:
+            session.run("MERGE (e:Estudiante {id_mongo: $id}) SET e.nombre = $n", id=mongo_id, n=data['nombre'])
+        
         return mongo_id
 
     @staticmethod
@@ -67,3 +63,4 @@ class StudentService:
         with get_neo4j() as session:
             session.run("MATCH (e:Estudiante {id_mongo: $id}) DETACH DELETE e", id=uid)
         return True
+    
