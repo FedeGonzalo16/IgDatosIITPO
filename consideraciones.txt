@@ -29,5 +29,25 @@ linea 251 y 252 el sentido
 
 ===========================================================================
 
-- No funciona cassandra (no crea la nueva keyspace)
-- Verificar si funciona redis
+backend/
+├── run.py                   # El archivo que ejecutas para arrancar todo
+├── requirements.txt         # Lista de librerías (flask, pymongo, etc.)
+└── src/
+    ├── __init__.py
+    ├── config/              # Dónde te conectas a las Bases de Datos
+    │   ├── __init__.py
+    │   └── database.py      # Aquí se inician Mongo, Neo4j, Redis y Cassandra
+    │
+    ├── routes/              # Los "Endpoints" (lo que llama el Frontend/Postman)
+    │   ├── __init__.py
+    │   ├── student_routes.py    # Rutas de Estudiantes
+    │   ├── academic_routes.py   # Rutas de Materias e Instituciones
+    │   ├── grading_routes.py    # Rutas de Calificaciones y Conversiones
+    │   └── reports_routes.py    # Rutas de Reportes (Cassandra)
+    │
+    └── services/            # La "Lógica" (El cerebro que coordina las BDs)
+        ├── __init__.py
+        ├── student_service.py   # Lógica de Estudiantes (Mongo + Neo4j)
+        ├── academic_service.py  # Lógica de Materias (Mongo + Neo4j)
+        ├── grading_service.py   # Lógica de Notas (Mongo + Neo4j + Cassandra)
+        └── analytics_service.py # Lógica de Reportes (Solo Cassandra/Mongo)
