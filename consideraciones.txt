@@ -26,3 +26,8 @@ linea 73 - porque no pone WITH CLUSTERING KEY a Reportes por Sistemas
 119 - sentido de Distribucion de Notas
 #Utilidades cheackear si son necesarias - hash integridad
 linea 251 y 252 el sentido
+
+===========================================================================
+
+- No funciona cassandra (no crea la nueva keyspace)
+- Verificar si funciona redis

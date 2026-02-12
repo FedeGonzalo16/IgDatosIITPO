@@ -949,16 +949,23 @@ def registrar_calificacion():
         
         # Sincronizar en Neo4j
         try:
+            # Usamos id_mongo para coincidir con lo que crea api_neo4j.py
+            # Y ponemos la nota DENTRO de la relación, no como nodo aparte.
             with driver_neo4j.session() as session:
                 session.run("""
-                    MERGE (e:Estudiante {id: $est_id})
-                    MERGE (m:Materia {id: $mat_id})
-                    MERGE (cal:Calificacion {id: $cal_id})
-                    SET cal.nota = $nota, cal.fecha = datetime()
-                    MERGE (e)-[:TIENE_CALIFICACION]->(cal)
-                    MERGE (cal)-[:DE_MATERIA]->(m)
-                """, est_id=str(data['estudiante_id']), mat_id=str(data['materia_id']), 
-                    cal_id=str(resultado.inserted_id), nota=valor_original.get('nota', 0))
+                    MATCH (e:Estudiante {id_mongo: $est_id})
+                    MATCH (m:Materia {id_mongo: $mat_id})
+                    
+                    MERGE (e)-[r:CURSO]->(m)
+                    SET r.nota = $nota,
+                        r.fecha_calificacion = datetime(),
+                        r.estado = CASE WHEN $nota >= 6 THEN 'APROBADA' ELSE 'REPROBADA' END,
+                        r.tipo_evaluacion = $tipo
+                """, 
+                est_id=str(data['estudiante_id']), 
+                mat_id=str(data['materia_id']), 
+                nota=valor_original.get('nota', 0),
+                tipo=valor_original.get('tipo', 'FINAL'))
         except Exception as e:
             print(f"[Neo4j] Error sinc: {e}")
         
