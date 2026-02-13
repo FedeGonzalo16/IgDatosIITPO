@@ -63,4 +63,12 @@ class StudentService:
         with get_neo4j() as session:
             session.run("MATCH (e:Estudiante {id_mongo: $id}) DETACH DELETE e", id=uid)
         return True
+
+    @staticmethod
+    def get_by_email(email):
+        db = get_mongo()
+        student = db.estudiantes.find_one({"email": email})
+        if student:
+            student['_id'] = str(student['_id'])
+        return student
     

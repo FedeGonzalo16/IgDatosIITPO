@@ -42,3 +42,11 @@ def delete(uid):
         return jsonify({"msg": "Eliminado"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# OBTENER POR EMAIL
+@student_bp.route('/email/<email>', methods=['GET'])
+def get_by_email(email):
+    student = StudentService.get_by_email(email)
+    if not student:
+        return jsonify({"error": "Estudiante no encontrado"}), 404
+    return jsonify(student)

@@ -64,3 +64,92 @@ class AcademicService:
             d['_id'] = str(d['_id'])
             d['institucion_id'] = str(d['institucion_id']) if d.get('institucion_id') else None
         return data
+
+    @staticmethod
+    def get_institucion_by_id(uid):
+        db = get_mongo()
+        inst = db.instituciones.find_one({"_id": ObjectId(uid)})
+        if inst:
+            inst['_id'] = str(inst['_id'])
+        return inst
+
+    @staticmethod
+    def update_institucion(uid, data):
+        db = get_mongo()
+        update_data = {}
+        if 'codigo' in data:
+            update_data['codigo'] = data['codigo']
+        if 'nombre' in data:
+            update_data['nombre'] = data['nombre']
+        if 'pais' in data:
+            update_data['pais'] = data['pais']
+        db.instituciones.update_one({"_id": ObjectId(uid)}, {"$set": update_data})
+        
+        # Sync Neo4j
+        with get_neo4j() as session:
+            session.run("""
+                MATCH (i:Institucion {id_mongo: $id})
+                SET i.codigo = $codigo, i.nombre = $nombre, i.pais = $pais
+            """, id=uid, codigo=data.get('codigo', ''), nombre=data.get('nombre', ''), pais=data.get('pais', ''))
+        return True
+
+    @staticmethod
+    def delete_institucion(uid):
+        db = get_mongo()
+        db.instituciones.update_one({"_id": ObjectId(uid)}, {"$set": {"metadata.estado": "INACTIVA"}})
+        return True
+
+    @staticmethod
+    def get_materia_by_id(uid):
+        db = get_mongo()
+        materia = db.materias.find_one({"_id": ObjectId(uid)})
+        if materia:
+            materia['_id'] = str(materia['_id'])
+            materia['institucion_id'] = str(materia['institucion_id']) if materia.get('institucion_id') else None
+        return materia
+
+    @staticmethod
+    def update_materia(uid, data):
+        db = get_mongo()
+        update_data = {}
+        if 'codigo' in data:
+            update_data['codigo'] = data['codigo']
+        if 'nombre' in data:
+            update_data['nombre'] = data['nombre']
+        if 'nivel' in data:
+            update_data['nivel'] = data['nivel']
+        db.materias.update_one({"_id": ObjectId(uid)}, {"$set": update_data})
+        
+        # Sync Neo4j
+        with get_neo4j() as session:
+            session.run("""
+                MATCH (m:Materia {id_mongo: $id})
+                SET m.codigo = $codigo, m.nombre = $nombre
+            """, id=uid, codigo=data.get('codigo', ''), nombre=data.get('nombre', ''))
+        return True
+
+    @staticmethod
+    def delete_materia(uid):
+        db = get_mongo()
+        db.materias.update_one({"_id": ObjectId(uid)}, {"$set": {"metadata.estado": "INACTIVA"}})
+        return True
+
+    @staticmethod
+    def get_materias_by_estudiante(est_id):
+        """Obtiene las materias de un estudiante desde Neo4j"""
+        materias = []
+        with get_neo4j() as session:
+            result = session.run("""
+                MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSANDO|CURSÓ]->(m:Materia)
+                RETURN DISTINCT m.id_mongo as materia_id, m.nombre as nombre, 
+                       m.codigo as codigo, type(r) as tipo_relacion
+            """, est_id=est_id)
+            
+            for record in result:
+                materias.append({
+                    "materia_id": record["materia_id"],
+                    "nombre": record["nombre"],
+                    "codigo": record["codigo"],
+                    "tipo": record["tipo_relacion"]
+                })
+        return materias

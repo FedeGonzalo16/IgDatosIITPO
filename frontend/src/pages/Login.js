@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
+import { studentService } from '../services/api';
 import './Auth.css';
 
 const Login = ({ onLogin }) => {
@@ -16,27 +17,63 @@ const Login = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      // Simulamos la autenticación - en producción usarías el servicio API
-      // const response = await authService.login(email, password);
-      
-      // Por ahora, vamos a simular un login exitoso
-      // Nota: Necesitas implementar un endpoint de autenticación en tu backend
-      
-      const mockUser = {
-        id: '1',
-        nombre: 'Estudiante',
-        email: email,
-        rol: email.includes('admin') ? 'admin' : 'student',
-        legajo: 'STU20241001'
-      };
+      // Buscar estudiante por email
+      let userData = null;
+      try {
+        const response = await studentService.getByEmail(email);
+        if (response.data) {
+          userData = response.data;
+        }
+      } catch (err) {
+        // Si no existe, crear un nuevo estudiante
+        if (err.response?.status === 404 || !err.response) {
+          try {
+            const createResponse = await studentService.create({
+              legajo: `STU-${Date.now()}`,
+              nombre: email.split('@')[0],
+              apellido: 'Usuario',
+              email: email,
+              pais: 'AR'
+            });
+            userData = {
+              _id: createResponse.data.id,
+              nombre: email.split('@')[0],
+              apellido: 'Usuario',
+              email: email,
+              legajo: `STU-${Date.now()}`,
+              rol: email.includes('admin') ? 'admin' : 'student'
+            };
+          } catch (createErr) {
+            console.error('Error creating student:', createErr);
+            setError('Error al crear usuario. Intenta nuevamente.');
+            return;
+          }
+        } else {
+          throw err;
+        }
+      }
 
-      const mockToken = 'mock-token-' + Date.now();
+      if (!userData) {
+        setError('No se pudo obtener información del usuario.');
+        return;
+      }
 
-      onLogin(mockUser, mockToken);
-      navigate(email.includes('admin') ? '/admin' : '/student');
+      // Asegurar que tenga _id o id
+      if (!userData._id && !userData.id) {
+        userData._id = userData._id || userData.id || `temp-${Date.now()}`;
+      }
+
+      // Agregar rol si no existe
+      if (!userData.rol) {
+        userData.rol = email.includes('admin') ? 'admin' : 'student';
+      }
+
+      const token = 'token-' + Date.now();
+      onLogin(userData, token);
+      navigate(userData.rol === 'admin' ? '/admin' : '/student');
     } catch (err) {
-      setError('Error de autenticación. Verifica tu email y contraseña.');
       console.error('Login error:', err);
+      setError(err.response?.data?.error || 'Error de autenticación. Verifica tu email.');
     } finally {
       setLoading(false);
     }

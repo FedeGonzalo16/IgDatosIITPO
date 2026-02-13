@@ -9,64 +9,8 @@ import {
   ConvertGrades
 } from '../components/StudentMenuContent';
 import { BookOpen, CheckCircle, Target, TrendingUp } from 'lucide-react';
+import { gradeService, trajectoryService } from '../services/api';
 import './StudentDashboard.css';
-
-const mockSubjects = [
-  {
-    id: 1,
-    codigo: 'MAT-001',
-    nombre: 'Matemática',
-    estado: 'cursando',
-    nota: null,
-    fecha_inicio: '2024-03-01',
-    profesor: 'Dr. García'
-  },
-  {
-    id: 2,
-    codigo: 'LEN-001',
-    nombre: 'Lengua y Literatura',
-    estado: 'cursando',
-    nota: null,
-    fecha_inicio: '2024-03-01',
-    profesor: 'Dra. Martínez'
-  },
-  {
-    id: 3,
-    codigo: 'FIS-001',
-    nombre: 'Física',
-    estado: 'aprobada',
-    nota: 8.5,
-    fecha_inicio: '2023-03-01',
-    profesor: 'Ing. López'
-  },
-  {
-    id: 4,
-    codigo: 'QUI-001',
-    nombre: 'Química',
-    estado: 'aprobada',
-    nota: 7.5,
-    fecha_inicio: '2023-03-01',
-    profesor: 'Dra. Rodríguez'
-  },
-  {
-    id: 5,
-    codigo: 'HIS-001',
-    nombre: 'Historia',
-    estado: 'aprobada',
-    nota: 9.0,
-    fecha_inicio: '2023-03-01',
-    profesor: 'Lic. Fernández'
-  },
-  {
-    id: 6,
-    codigo: 'BIO-001',
-    nombre: 'Biología',
-    estado: 'cursando',
-    nota: null,
-    fecha_inicio: '2024-03-01',
-    profesor: 'Dra. González'
-  }
-];
 
 const StudentDashboard = ({ user, onLogout }) => {
   const [stats, setStats] = useState({
@@ -75,7 +19,10 @@ const StudentDashboard = ({ user, onLogout }) => {
     averageGrade: 0,
     inProgress: 0
   });
+  const [historial, setHistorial] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState('inicio');
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -86,32 +33,147 @@ const StudentDashboard = ({ user, onLogout }) => {
   };
 
   useEffect(() => {
-    const passedCount = mockSubjects.filter(s => s.estado === 'aprobada').length;
-    const inProgressCount = mockSubjects.filter(s => s.estado === 'cursando').length;
-    const grades = mockSubjects.filter(s => s.nota).map(s => s.nota);
-    const average = grades.length > 0 ? (grades.reduce((a, b) => a + b) / grades.length).toFixed(2) : 0;
+    // Intentar cargar datos cuando el componente se monta
+    const loadData = async () => {
+      // Si no hay user pero hay datos en localStorage, intentar cargarlos
+      if (!user) {
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+          try {
+            const parsedUser = JSON.parse(savedUser);
+            if (parsedUser._id || parsedUser.id) {
+              // Recargar datos con el usuario de localStorage
+              await loadStudentData(parsedUser);
+              return;
+            }
+          } catch (e) {
+            console.error('Error parsing user from localStorage:', e);
+          }
+        }
+        setLoading(false);
+        return;
+      }
+      
+      if (user?._id || user?.id) {
+        await loadStudentData();
+      } else {
+        console.warn('No user ID available. User object:', user);
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-    setStats({
-      totalSubjects: mockSubjects.length,
-      passedSubjects: passedCount,
-      averageGrade: average,
-      inProgress: inProgressCount
-    });
-  }, []);
+  const loadStudentData = async (userData = null) => {
+    setLoading(true);
+    try {
+      const currentUser = userData || user;
+      const studentId = currentUser?._id || currentUser?.id;
+      if (!studentId) {
+        console.warn('No student ID found. User:', currentUser);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Loading data for student:', studentId);
+
+      // Cargar historial de calificaciones
+      let historialData = [];
+      try {
+        const historialRes = await gradeService.getByStudent(studentId);
+        historialData = historialRes.data || [];
+        console.log('Historial loaded:', historialData);
+      } catch (error) {
+        console.error('Error loading historial:', error);
+        // Si no hay historial, continuar con array vacío
+        historialData = [];
+      }
+      
+      setHistorial(historialData);
+
+      // Calcular estadísticas
+      const materiasEnCurso = historialData.filter(h => h.estado === 'EN_CURSO' || !h.fecha_cierre);
+      const materiasAprobadas = historialData.filter(h => h.estado === 'APROBADO');
+      const materiasReprobadas = historialData.filter(h => h.estado === 'REPROBADO');
+      
+      // Calcular promedio de notas finales
+      const notasFinales = historialData
+        .filter(h => h.notas?.final)
+        .map(h => parseFloat(h.notas.final))
+        .filter(n => !isNaN(n));
+      
+      const promedio = notasFinales.length > 0
+        ? (notasFinales.reduce((a, b) => a + b, 0) / notasFinales.length).toFixed(2)
+        : 0;
+
+      setStats({
+        totalSubjects: historialData.length,
+        passedSubjects: materiasAprobadas.length,
+        averageGrade: promedio,
+        inProgress: materiasEnCurso.length
+      });
+      setError(null);
+    } catch (error) {
+      console.error('Error loading student data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      // Mostrar error al usuario
+      if (error.response?.status === 404) {
+        setError('No se encontraron datos. Esto es normal si es tu primera vez. Puedes inscribirte a materias.');
+      } else if (error.response?.status >= 500) {
+        setError('Error del servidor. Por favor, intenta más tarde.');
+      } else if (error.message.includes('Network')) {
+        setError('Error de conexión. Verifica que el backend esté corriendo en http://localhost:5000');
+      } else {
+        setError(`Error: ${error.response?.data?.error || error.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUserUpdate = (updatedUser) => {
+    // Actualizar user en el componente padre si es necesario
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        const merged = { ...parsed, ...updatedUser };
+        localStorage.setItem('user', JSON.stringify(merged));
+        // Recargar datos
+        loadStudentData(merged);
+      } catch (e) {
+        console.error('Error updating user:', e);
+      }
+    }
+  };
 
   const renderContent = () => {
     if (activeMenu === 'perfil') {
-      return <StudentProfile user={user} onBack={() => setActiveMenu('inicio')} stats={stats} />;
+      return <StudentProfile user={user} onBack={() => setActiveMenu('inicio')} stats={stats} onUpdate={handleUserUpdate} />;
     }
     if (activeMenu === 'inscribirse') {
-      return <StudentEnrollment subjects={mockSubjects} onBack={() => setActiveMenu('inicio')} />;
+      return <StudentEnrollment user={user} onBack={() => setActiveMenu('inicio')} onEnroll={loadStudentData} />;
     }
     if (activeMenu === 'institucion') {
-      return <ChangeInstitution user={user} onBack={() => setActiveMenu('inicio')} />;
+      return <ChangeInstitution user={user} onBack={() => setActiveMenu('inicio')} onUpdate={handleUserUpdate} />;
     }
     if (activeMenu === 'convertir') {
-      return <ConvertGrades subjects={mockSubjects} onBack={() => setActiveMenu('inicio')} />;
+      return <ConvertGrades historial={historial} user={user} onBack={() => setActiveMenu('inicio')} />;
     }
+    if (activeMenu === 'trayectoria') {
+      return <TrajectoryView user={user} onBack={() => setActiveMenu('inicio')} />;
+    }
+
+    const materiasEnCurso = historial.filter(h => h.estado === 'EN_CURSO' || !h.fecha_cierre);
+    const materiasAprobadas = historial.filter(h => h.estado === 'APROBADO');
+    const materiasReprobadas = historial.filter(h => h.estado === 'REPROBADO');
 
     return (
       <div className="dashboard-main">
@@ -120,85 +182,155 @@ const StudentDashboard = ({ user, onLogout }) => {
           <p>Bienvenido, {user?.nombre || user?.email}</p>
         </div>
 
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon">
-              <BookOpen size={32} />
-            </div>
-            <div className="stat-content">
-              <h3>{stats.totalSubjects}</h3>
-              <p>Total de Materias</p>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon">
-              <CheckCircle size={32} />
-            </div>
-            <div className="stat-content">
-              <h3>{stats.passedSubjects}</h3>
-              <p>Aprobadas</p>
+        {loading ? (
+          <div className="loading-container">Cargando datos...</div>
+        ) : error ? (
+          <div className="error-container">
+            <div className="error-message">
+              <strong>⚠️ {error}</strong>
+              <p>Si es tu primera vez, puedes crear materias e inscribirte desde el menú lateral.</p>
+              <button 
+                className="btn-enroll" 
+                onClick={() => setActiveMenu('inscribirse')}
+                style={{ marginTop: '15px' }}
+              >
+                Ir a Inscripciones
+              </button>
             </div>
           </div>
-
-          <div className="stat-card">
-            <div className="stat-icon">
-              <TrendingUp size={32} />
-            </div>
-            <div className="stat-content">
-              <h3>{stats.averageGrade}</h3>
-              <p>Promedio General</p>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon">
-              <Target size={32} />
-            </div>
-            <div className="stat-content">
-              <h3>{stats.inProgress}</h3>
-              <p>En Curso</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="subjects-section">
-          <h2>Materias en Curso</h2>
-          <div className="subjects-grid">
-            {mockSubjects.filter(s => s.estado === 'cursando').map(subject => (
-              <div key={subject.id} className="subject-card">
-                <div className="subject-header">
-                  <h3>{subject.nombre}</h3>
-                  <span className="subject-code">{subject.codigo}</span>
+        ) : (
+          <>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-icon">
+                  <BookOpen size={32} />
                 </div>
-                <div className="subject-details">
-                  <p><strong>Profesor:</strong> {subject.profesor}</p>
-                  <p><strong>Inicio:</strong> {new Date(subject.fecha_inicio).toLocaleDateString('es-ES')}</p>
+                <div className="stat-content">
+                  <h3>{stats.totalSubjects}</h3>
+                  <p>Total de Materias</p>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
 
-        <div className="subjects-section">
-          <h2>Materias Aprobadas</h2>
-          <div className="subjects-grid">
-            {mockSubjects.filter(s => s.estado === 'aprobada').map(subject => (
-              <div key={subject.id} className="subject-card approved">
-                <div className="subject-header">
-                  <h3>{subject.nombre}</h3>
-                  <span className="subject-code">{subject.codigo}</span>
+              <div className="stat-card">
+                <div className="stat-icon">
+                  <CheckCircle size={32} />
                 </div>
-                <div className="subject-details">
-                  <p><strong>Profesor:</strong> {subject.profesor}</p>
-                  <div className="grade-badge">
-                    <strong>Nota:</strong> {subject.nota}
-                  </div>
+                <div className="stat-content">
+                  <h3>{stats.passedSubjects}</h3>
+                  <p>Aprobadas</p>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
+
+              <div className="stat-card">
+                <div className="stat-icon">
+                  <TrendingUp size={32} />
+                </div>
+                <div className="stat-content">
+                  <h3>{stats.averageGrade}</h3>
+                  <p>Promedio General</p>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon">
+                  <Target size={32} />
+                </div>
+                <div className="stat-content">
+                  <h3>{stats.inProgress}</h3>
+                  <p>En Curso</p>
+                </div>
+              </div>
+            </div>
+
+            {materiasEnCurso.length > 0 && (
+              <div className="subjects-section">
+                <h2>Materias en Curso</h2>
+                <div className="subjects-grid">
+                  {materiasEnCurso.map((materia, idx) => (
+                    <div key={idx} className="subject-card">
+                      <div className="subject-header">
+                        <h3>{materia.materia_nombre || 'Materia'}</h3>
+                        <span className="subject-code">{materia.materia_codigo || ''}</span>
+                      </div>
+                      <div className="subject-details">
+                        <p><strong>Año:</strong> {materia.anio || 'N/A'}</p>
+                        {materia.notas && (
+                          <div className="notas-preview">
+                            {materia.notas.primer_parcial && <span>P1: {materia.notas.primer_parcial}</span>}
+                            {materia.notas.segundo_parcial && <span>P2: {materia.notas.segundo_parcial}</span>}
+                            {materia.notas.final && <span>Final: {materia.notas.final}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {materiasAprobadas.length > 0 && (
+              <div className="subjects-section">
+                <h2>Materias Aprobadas</h2>
+                <div className="subjects-grid">
+                  {materiasAprobadas.map((materia, idx) => (
+                    <div key={idx} className="subject-card approved">
+                      <div className="subject-header">
+                        <h3>{materia.materia_nombre || 'Materia'}</h3>
+                        <span className="subject-code">{materia.materia_codigo || ''}</span>
+                      </div>
+                      <div className="subject-details">
+                        {materia.notas?.final && (
+                          <div className="grade-badge">
+                            <strong>Nota Final:</strong> {materia.notas.final}
+                          </div>
+                        )}
+                        {materia.fecha_cierre && (
+                          <p><small>Cerrada: {new Date(materia.fecha_cierre).toLocaleDateString('es-ES')}</small></p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {materiasReprobadas.length > 0 && (
+              <div className="subjects-section">
+                <h2>Materias Reprobadas</h2>
+                <div className="subjects-grid">
+                  {materiasReprobadas.map((materia, idx) => (
+                    <div key={idx} className="subject-card reprobada">
+                      <div className="subject-header">
+                        <h3>{materia.materia_nombre || 'Materia'}</h3>
+                        <span className="subject-code">{materia.materia_codigo || ''}</span>
+                      </div>
+                      <div className="subject-details">
+                        {materia.notas?.final && (
+                          <div className="grade-badge">
+                            <strong>Nota Final:</strong> {materia.notas.final}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {historial.length === 0 && !loading && (
+              <div className="no-data">
+                <p>No tienes materias registradas aún.</p>
+                <button 
+                  className="btn-enroll" 
+                  onClick={() => setActiveMenu('inscribirse')}
+                  style={{ marginTop: '15px' }}
+                >
+                  Inscribirse a Materias
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     );
   };
@@ -218,6 +350,97 @@ const StudentDashboard = ({ user, onLogout }) => {
         </main>
       </div>
     </>
+  );
+};
+
+// Componente de Trayectoria
+const TrajectoryView = ({ user, onBack }) => {
+  const [trajectory, setTrajectory] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTrajectory();
+  }, []);
+
+  const loadTrajectory = async () => {
+    try {
+      const studentId = user?._id || user?.id;
+      if (studentId) {
+        const res = await trajectoryService.getStudentTrajectory(studentId);
+        setTrajectory(res.data);
+      }
+    } catch (error) {
+      console.error('Error loading trajectory:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="menu-content">
+        <div className="content-header">
+          <button className="back-btn" onClick={onBack}>
+            ← Volver
+          </button>
+          <h2>Mi Trayectoria</h2>
+        </div>
+        <div className="loading-container">Cargando trayectoria...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="menu-content">
+      <div className="content-header">
+        <button className="back-btn" onClick={onBack}>
+          ← Volver
+        </button>
+        <h2>Mi Trayectoria Académica</h2>
+      </div>
+
+      {trajectory && (
+        <div className="trajectory-container">
+          <div className="trajectory-section">
+            <h3>Materias en Curso ({trajectory.materias_en_curso?.length || 0})</h3>
+            {trajectory.materias_en_curso?.map((m, idx) => (
+              <div key={idx} className="trajectory-item">
+                <strong>{m.nombre}</strong> ({m.codigo}) - Año {m.anio}
+              </div>
+            ))}
+          </div>
+
+          <div className="trajectory-section">
+            <h3>Materias Aprobadas ({trajectory.materias_aprobadas?.length || 0})</h3>
+            {trajectory.materias_aprobadas?.map((m, idx) => (
+              <div key={idx} className="trajectory-item approved">
+                <strong>{m.nombre}</strong> ({m.codigo}) - Nota: {m.nota_final} - Año {m.anio}
+              </div>
+            ))}
+          </div>
+
+          <div className="trajectory-section">
+            <h3>Materias Reprobadas ({trajectory.materias_reprobadas?.length || 0})</h3>
+            {trajectory.materias_reprobadas?.map((m, idx) => (
+              <div key={idx} className="trajectory-item reprobada">
+                <strong>{m.nombre}</strong> ({m.codigo}) - Nota: {m.nota_final} - Año {m.anio}
+              </div>
+            ))}
+          </div>
+
+          {trajectory.recursadas && trajectory.recursadas.length > 0 && (
+            <div className="trajectory-section">
+              <h3>Recursadas</h3>
+              {trajectory.recursadas.map((r, idx) => (
+                <div key={idx} className="trajectory-item">
+                  <strong>{r.nombre}</strong> ({r.codigo}) - {r.veces} veces
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 

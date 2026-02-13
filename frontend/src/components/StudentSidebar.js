@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, LogOut, BookOpen, Building2, Calculator, Menu, X } from 'lucide-react';
+import { User, LogOut, BookOpen, Building2, Calculator, Menu, X, TrendingUp } from 'lucide-react';
 import './StudentSidebar.css';
 
 const StudentSidebar = ({ user, onLogout, onMenuSelect, activeMenu }) => {
@@ -41,6 +41,12 @@ const StudentSidebar = ({ user, onLogout, onMenuSelect, activeMenu }) => {
       label: 'Convertir Notas',
       icon: Calculator,
       description: 'Convertir y comparar tus calificaciones'
+    },
+    {
+      id: 'trayectoria',
+      label: 'Mi Trayectoria',
+      icon: TrendingUp,
+      description: 'Ver tu trayectoria académica completa'
     }
   ];
 

@@ -245,3 +245,42 @@
     opacity: 1;
   }
 }
+
+.error-container {
+  background: white;
+  border-radius: 10px;
+  padding: 40px;
+  margin: 20px 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  text-align: center;
+}
+
+.error-message {
+  color: #ef4444;
+}
+
+.error-message strong {
+  display: block;
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+}
+
+.error-message p {
+  color: #666;
+  margin-top: 10px;
+}
+
+.no-data {
+  background: white;
+  border-radius: 10px;
+  padding: 40px;
+  text-align: center;
+  margin: 20px 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.no-data p {
+  color: #666;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}

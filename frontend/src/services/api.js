@@ -106,22 +106,22 @@ export const gradeService = {
 
 export const subjectService = {
   getAll: (params = {}) =>
-    apiClient.get('/materias', { params }),
+    apiClient.get('/academic/materias', { params }),
   
   getById: (id) =>
-    apiClient.get(`/materias/${id}`),
+    apiClient.get(`/academic/materias/${id}`),
   
   create: (data) =>
-    apiClient.post('/materias', data),
+    apiClient.post('/academic/materias', data),
   
   update: (id, data) =>
-    apiClient.put(`/materias/${id}`, data),
+    apiClient.put(`/academic/materias/${id}`, data),
   
   delete: (id) =>
-    apiClient.delete(`/materias/${id}`),
-
+    apiClient.delete(`/academic/materias/${id}`),
+  
   getByStudent: (studentId) =>
-    apiClient.get(`/materias/estudiante/${studentId}`)
+    apiClient.get(`/academic/materias/estudiante/${studentId}`)
 };
 
 // ==========================================
@@ -130,19 +130,19 @@ export const subjectService = {
 
 export const institutionService = {
   getAll: (params = {}) =>
-    apiClient.get('/instituciones', { params }),
+    apiClient.get('/academic/instituciones', { params }),
   
   getById: (id) =>
-    apiClient.get(`/instituciones/${id}`),
+    apiClient.get(`/academic/instituciones/${id}`),
   
   create: (data) =>
-    apiClient.post('/instituciones', data),
+    apiClient.post('/academic/instituciones', data),
   
   update: (id, data) =>
-    apiClient.put(`/instituciones/${id}`, data),
+    apiClient.put(`/academic/instituciones/${id}`, data),
   
   delete: (id) =>
-    apiClient.delete(`/instituciones/${id}`)
+    apiClient.delete(`/academic/instituciones/${id}`)
 };
 
 // ==========================================
@@ -181,7 +181,13 @@ export const reportService = {
     apiClient.get('/reportes/calificaciones', { params }),
 
   getApprovalStats: (params = {}) =>
-    apiClient.get('/reportes/aprobacion', { params })
+    apiClient.get('/reportes/aprobacion', { params }),
+  
+  getAuditoria: (studentId) =>
+    apiClient.get(`/reportes/auditoria/${studentId}`),
+  
+  getRegional: (region) =>
+    apiClient.get(`/reportes/region/${region}`)
 };
 
 // ==========================================
@@ -189,11 +195,47 @@ export const reportService = {
 // ==========================================
 
 export const trajectoryService = {
-  getStudentTrayectory: (studentId) =>
+  getStudentTrajectory: (studentId) =>
     apiClient.get(`/trayectoria/estudiante/${studentId}`),
   
-  getSubjectTrayectory: (subjectId) =>
+  getSubjectTrajectory: (subjectId) =>
     apiClient.get(`/trayectoria/materia/${subjectId}`)
+};
+
+// ==========================================
+// CONVERSIONES
+// ==========================================
+
+export const conversionService = {
+  createRule: (data) =>
+    apiClient.post('/calificaciones/reglas', data),
+  
+  applyConversion: (data) =>
+    apiClient.post('/calificaciones/convertir', data)
+};
+
+// ==========================================
+// GRADING OPERATIONS
+// ==========================================
+
+export const gradingOperations = {
+  inscribirAlumno: (data) =>
+    apiClient.post('/calificaciones/inscribir', data),
+  
+  cargarNota: (data) =>
+    apiClient.post('/calificaciones/cargar-nota', data),
+  
+  cerrarCursada: (data) =>
+    apiClient.post('/calificaciones/cerrar-cursada', data)
+};
+
+// ==========================================
+// PROFESSOR OPERATIONS
+// ==========================================
+
+export const professorOperations = {
+  asignarMateria: (profId, data) =>
+    apiClient.post(`/profesores/${profId}/asignar-materia`, data)
 };
 
 export default apiClient;
