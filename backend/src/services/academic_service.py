@@ -25,6 +25,31 @@ class AcademicService:
 
     @staticmethod
     def get_instituciones():
+        # Intentar primero obtener instituciones desde Neo4j (si existen en el grafo)
+        try:
+            with get_neo4j() as session:
+                result = session.run("""
+                    MATCH (i:Institucion)
+                    RETURN i.id_mongo as id_mongo, i.codigo as codigo, i.nombre as nombre, i.pais as pais
+                """)
+                rows = list(result)
+                if rows:
+                    data = []
+                    for idx, r in enumerate(rows):
+                        inst_id = r.get('id_mongo')
+                        _id = str(inst_id) if inst_id else f"neo4j-{idx+1}"
+                        data.append({
+                            '_id': _id,
+                            'codigo': r.get('codigo') or '',
+                            'nombre': r.get('nombre') or '',
+                            'pais': r.get('pais') or ''
+                        })
+                    return data
+        except Exception:
+            # Si falla Neo4j, continuamos con MongoDB
+            pass
+
+        # Fallback a MongoDB
         db = get_mongo()
         data = list(db.instituciones.find({"metadata.estado": "ACTIVA"}))
         for d in data: d['_id'] = str(d['_id'])

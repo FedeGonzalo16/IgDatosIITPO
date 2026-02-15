@@ -69,10 +69,15 @@ try:
     CASSANDRA_HOSTS = os.getenv('CASSANDRA_HOSTS', 'localhost').split(',')
     cluster = Cluster(CASSANDRA_HOSTS)
     cassandra_session = cluster.connect()
-    # Aseguramos que el keyspace exista
-     # Dentro del bloque try de Cassandra en database.py:
+    # Crear el keyspace si no existe
     cassandra_session.execute("""
-        CREATE TABLE IF NOT EXISTS edugrade_audit.entity_metadata (
+        CREATE KEYSPACE IF NOT EXISTS edugrade_audit
+        WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
+    """)
+    cassandra_session.set_keyspace('edugrade_audit')
+    # Crear la tabla en el keyspace
+    cassandra_session.execute("""
+        CREATE TABLE IF NOT EXISTS entity_metadata (
             entity_type text,
             entity_id text,
             estado text,
@@ -81,7 +86,6 @@ try:
             PRIMARY KEY (entity_type, entity_id)
         )
     """)
-    cassandra_session.set_keyspace('edugrade_audit')
 except Exception as e:
     print(f"[WARNING] Cassandra no disponible: {e}")
     cassandra_session = None

@@ -4,7 +4,9 @@ from src.services.student_service import StudentService
 student_bp = Blueprint('students', __name__)
 
 # CREAR
-@student_bp.route('/', methods=['POST'])
+@student_bp.route('', methods=['POST'], strict_slashes=False)
+
+
 def create():
     try:
         uid = StudentService.create(request.json)
@@ -50,3 +52,12 @@ def get_by_email(email):
     if not student:
         return jsonify({"error": "Estudiante no encontrado"}), 404
     return jsonify(student)
+
+# SINCRONIZAR CON NEO4J
+@student_bp.route('/<uid>/sync', methods=['POST'])
+def sync_to_neo4j(uid):
+    try:
+        StudentService.sync_to_neo4j(uid)
+        return jsonify({"msg": "Estudiante sincronizado con Neo4j"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

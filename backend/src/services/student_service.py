@@ -12,17 +12,30 @@ class StudentService:
             "legajo": data['legajo'],
             "nombre": data['nombre'],
             "apellido": data['apellido'],
-            "email": data.get('email', '')
+            "email": data.get('email', ''),
+            "institucion_id": data.get('institucion_id'),
+            "pais": data.get('pais', 'AR')
         }
         res = db.estudiantes.insert_one(doc)
         mongo_id = str(res.inserted_id)
+        
+        print(f"[CREATE] Creado estudiante en MongoDB: {mongo_id}, nombre={data['nombre']}")
 
         # 2. Metadatos EXCLUSIVOS en Cassandra
         MetadataService.save_metadata('estudiante', mongo_id, 'ACTIVO')
 
-        # 3. Neo4j Sync
+        # 3. Neo4j Sync - Crear nodo Estudiante
         with get_neo4j() as session:
-            session.run("MERGE (e:Estudiante {id_mongo: $id}) SET e.nombre = $n", id=mongo_id, n=data['nombre'])
+            session.run("""
+                MERGE (e:Estudiante {id_mongo: $id}) 
+                SET e.nombre = $nombre,
+                    e.apellido = $apellido,
+                    e.email = $email,
+                    e.legajo = $legajo
+            """, id=mongo_id, nombre=data['nombre'], apellido=data['apellido'], 
+                email=data.get('email', ''), legajo=data['legajo'])
+            
+            print(f"[CREATE] Nodo Estudiante creado en Neo4j: {mongo_id}")
         
         return mongo_id
 
@@ -71,4 +84,32 @@ class StudentService:
         if student:
             student['_id'] = str(student['_id'])
         return student
-    
+
+    @staticmethod
+    def sync_to_neo4j(uid):
+        """Sincroniza un estudiante existente en MongoDB con Neo4j"""
+        db = get_mongo()
+        student = db.estudiantes.find_one({"_id": ObjectId(uid)})
+        
+        if not student:
+            raise Exception(f"Estudiante {uid} no encontrado")
+        
+        mongo_id = str(student['_id'])
+        print(f"[SYNC] Sincronizando estudiante {mongo_id} a Neo4j")
+        
+        with get_neo4j() as session:
+            # Crear o actualizar nodo Estudiante
+            session.run("""
+                MERGE (e:Estudiante {id_mongo: $id})
+                SET e.nombre = $nombre,
+                    e.apellido = $apellido,
+                    e.email = $email,
+                    e.legajo = $legajo
+            """, id=mongo_id, nombre=student.get('nombre', ''), 
+                apellido=student.get('apellido', ''),
+                email=student.get('email', ''),
+                legajo=student.get('legajo', ''))
+            
+            print(f"[SYNC] Estudiante {mongo_id} sincronizado en Neo4j")
+        
+        return True

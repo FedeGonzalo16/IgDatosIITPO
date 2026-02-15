@@ -8,8 +8,31 @@ class GradingService:
     @staticmethod
     def inscribir_alumno(est_id, mat_id, anio_lectivo):
         """Crea una NUEVA relación CURSANDO. No sobreescribe si recursa."""
+        print(f"[DEBUG inscribir_alumno] est_id={est_id}, mat_id={mat_id}, anio={anio_lectivo}")
+        
         with get_neo4j() as session:
-            session.run("""
+            # Primero verificar que existen los nodos
+            estudiante_check = session.run("""
+                MATCH (e:Estudiante {id_mongo: $est_id})
+                RETURN e
+            """, est_id=est_id)
+            
+            if not list(estudiante_check):
+                print(f"[ERROR] Estudiante {est_id} NO existe en Neo4j")
+                raise Exception(f"Estudiante {est_id} no encontrado en el sistema")
+            
+            materia_check = session.run("""
+                MATCH (m:Materia {id_mongo: $mat_id})
+                RETURN m
+            """, mat_id=mat_id)
+            
+            if not list(materia_check):
+                print(f"[ERROR] Materia {mat_id} NO existe en Neo4j")
+                raise Exception(f"Materia {mat_id} no encontrada en el sistema")
+            
+            print(f"[OK] Ambos nodos existen. Creando relación CURSANDO...")
+            
+            result = session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})
                 MATCH (m:Materia {id_mongo: $mat_id})
                 // Usamos CREATE en lugar de MERGE para permitir recursadas múltiples
@@ -17,7 +40,14 @@ class GradingService:
                     anio: $anio,
                     estado: 'EN_CURSO'
                 }]->(m)
+                RETURN r
             """, est_id=est_id, mat_id=mat_id, anio=anio_lectivo)
+            
+            rel = list(result)
+            if rel:
+                print(f"[OK] Relación CURSANDO creada exitosamente")
+            else:
+                print(f"[WARNING] Relación CURSANDO NO se creó")
         return True
 
     @staticmethod

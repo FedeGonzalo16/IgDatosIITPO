@@ -90,9 +90,28 @@ def run_seed():
     print("   ✅ 5 Materias creadas y vinculadas a sus instituciones.")
 
     # ==========================================
-    # 3. CREAR ESTUDIANTES (3)
+    # 3. CREAR ESTUDIANTES (5)
     # ==========================================
     log("3", "Creando Estudiantes...")
+
+    # Usuarios de demostración
+    est_demo = post("estudiantes/", {
+        "legajo": "DEMO-001",
+        "nombre": "Student",
+        "apellido": "Demo",
+        "email": "student@example.com",
+        "pais": "AR"
+    })['id']
+    print(f"   ✅ Student Demo creado (ID: {est_demo})")
+
+    est_admin = post("estudiantes/", {
+        "legajo": "ADMIN-001",
+        "nombre": "Admin",
+        "apellido": "User",
+        "email": "admin@example.com",
+        "pais": "AR"
+    })['id']
+    print(f"   ✅ Admin Demo creado (ID: {est_admin})")
 
     # Estudiante 1 (UADE - Va a recursar)
     est_fede = post("estudiantes/", {
