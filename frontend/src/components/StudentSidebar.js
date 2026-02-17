@@ -1,16 +1,9 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { User, LogOut, BookOpen, Building2, Calculator, Menu, X, TrendingUp } from 'lucide-react';
+import { User, BookOpen, Building2, Calculator, Menu, X } from 'lucide-react';
 import './StudentSidebar.css';
 
-const StudentSidebar = ({ user, onLogout, onMenuSelect, activeMenu }) => {
+const StudentSidebar = ({ user, onMenuSelect, activeMenu }) => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    onLogout();
-    navigate('/login');
-  };
 
   const handleMenuClick = (menu) => {
     onMenuSelect(menu);
@@ -41,12 +34,6 @@ const StudentSidebar = ({ user, onLogout, onMenuSelect, activeMenu }) => {
       label: 'Convertir Notas',
       icon: Calculator,
       description: 'Convertir y comparar tus calificaciones'
-    },
-    {
-      id: 'trayectoria',
-      label: 'Mi Trayectoria',
-      icon: TrendingUp,
-      description: 'Ver tu trayectoria académica completa'
     }
   ];
 
@@ -90,15 +77,6 @@ const StudentSidebar = ({ user, onLogout, onMenuSelect, activeMenu }) => {
             );
           })}
         </nav>
-
-        {/* Divider */}
-        <div className="sidebar-divider" />
-
-        {/* Logout Button */}
-        <button className="sidebar-logout" onClick={handleLogout}>
-          <LogOut size={20} />
-          <span className="menu-label">Cerrar Sesión</span>
-        </button>
       </aside>
     </>
   );

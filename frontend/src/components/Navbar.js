@@ -28,12 +28,20 @@ const Navbar = ({ user, onLogout }) => {
           {user && (
             <>
               {user.rol === 'admin' ? (
-                <li className="nav-item">
-                  <Link to="/admin" className="nav-links">
-                    <BarChart3 size={18} />
-                    Panel Admin
-                  </Link>
-                </li>
+                <>
+                  <li className="nav-item">
+                    <Link to="/admin" className="nav-links">
+                      <BarChart3 size={18} />
+                      Panel Admin
+                    </Link>
+                  </li>
+                  <li className="nav-item">
+                    <Link to="/admin/reportes" className="nav-links">
+                      <BarChart3 size={18} />
+                      Reportes
+                    </Link>
+                  </li>
+                </>
               ) : (
                 <>
                   <li className="nav-item">

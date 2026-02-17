@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import StudentProfile from './pages/StudentProfile';
+import ReportesPage from './pages/ReportesPage';
 
 // Componentes
 import ProtectedRoute from './components/ProtectedRoute';
@@ -87,14 +88,22 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/reportes"
+          element={
+            <ProtectedRoute user={user} role="admin" onLogout={handleLogout}>
+              <ReportesPage user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          }
+        />
 
-        {/* Redirecciones */}
+        {/* Ruta raíz: login como primera pantalla si no hay usuario */}
         <Route 
           path="/" 
           element={user ? (
             user.rol === 'admin' ? <Navigate to="/admin" /> : <Navigate to="/student" />
           ) : (
-            <Navigate to="/login" />
+            <Login onLogin={handleLogin} />
           )} 
         />
       </Routes>

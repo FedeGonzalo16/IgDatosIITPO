@@ -603,6 +603,33 @@
   background-color: #fef2f2;
 }
 
+.trajectory-block {
+  margin-bottom: 20px;
+}
+
+.trajectory-block h4 {
+  color: #555;
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.trajectory-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.trajectory-list .trajectory-item {
+  margin-bottom: 6px;
+}
+
+.trajectory-loading,
+.trajectory-empty {
+  color: #888;
+  font-size: 0.95rem;
+  margin: 10px 0;
+}
+
 .subject-card.reprobada {
   border-left: 4px solid #ef4444;
   background-color: #fef2f2;
@@ -735,6 +762,38 @@
 }
 
 /* Estilos para edición de perfil */
+.profile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.btn-download-analitico {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: #0d9488;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-download-analitico:hover:not(:disabled) {
+  background: #0f766e;
+  transform: translateY(-1px);
+}
+
+.btn-download-analitico:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .btn-edit-profile {
   display: flex;
   align-items: center;

@@ -12,7 +12,8 @@ class StudentService:
             "legajo": data['legajo'],
             "nombre": data['nombre'],
             "apellido": data['apellido'],
-            "email": data.get('email', '')
+            "email": data.get('email', ''),
+            "metadata": {"estado": "ACTIVO"}
         }
         res = db.estudiantes.insert_one(doc)
         mongo_id = str(res.inserted_id)
@@ -29,8 +30,16 @@ class StudentService:
     @staticmethod
     def get_all():
         db = get_mongo()
-        students = list(db.estudiantes.find({"metadata.estado": "ACTIVO"}))
-        for s in students: s['_id'] = str(s['_id'])
+        # Incluir ACTIVO o sin metadata (compatibilidad con datos existentes)
+        students = list(db.estudiantes.find({
+            "$or": [
+                {"metadata.estado": "ACTIVO"},
+                {"metadata.estado": {"$exists": False}},
+                {"metadata": {"$exists": False}}
+            ]
+        }))
+        for s in students:
+            s['_id'] = str(s['_id'])
         return students
 
     @staticmethod

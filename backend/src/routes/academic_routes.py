@@ -74,3 +74,37 @@ def delete_mat(uid):
 @academic_bp.route('/materias/estudiante/<est_id>', methods=['GET'])
 def get_materias_by_estudiante(est_id):
     return jsonify(AcademicService.get_materias_by_estudiante(est_id))
+
+# Carreras
+@academic_bp.route('/carreras', methods=['POST'])
+def create_carrera():
+    uid = AcademicService.create_carrera(request.json)
+    return jsonify({"id": uid}), 201
+
+@academic_bp.route('/carreras', methods=['GET'])
+def get_carreras():
+    return jsonify(AcademicService.get_carreras())
+
+@academic_bp.route('/carreras/<uid>', methods=['GET'])
+def get_carrera_by_id(uid):
+    carrera = AcademicService.get_carrera_by_id(uid)
+    if not carrera:
+        return jsonify({"error": "Carrera no encontrada"}), 404
+    return jsonify(carrera)
+
+@academic_bp.route('/carreras/<carrera_id>/materias/<materia_id>', methods=['POST'])
+def agregar_materia_carrera(carrera_id, materia_id):
+    try:
+        AcademicService.agregar_materia_a_carrera(carrera_id, materia_id)
+        return jsonify({"msg": "Materia agregada a la carrera"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@academic_bp.route('/carreras/<carrera_id>/materias', methods=['GET'])
+def get_materias_carrera(carrera_id):
+    return jsonify(AcademicService.get_materias_de_carrera(carrera_id))
+
+@academic_bp.route('/carreras/<carrera_id>/faltantes/<est_id>', methods=['GET'])
+def get_faltantes_recibirse(carrera_id, est_id):
+    """Materias que le faltan al estudiante para recibirse en la carrera."""
+    return jsonify(AcademicService.get_materias_faltantes_para_recibirse(est_id, carrera_id))

@@ -8,7 +8,16 @@ from src.routes.professor_routes import professor_bp
 from src.routes.trajectory_routes import trajectory_bp
 
 app = Flask(__name__)
-CORS(app)  # Habilitar CORS para el frontend
+# Evitar redirecciones por trailing slash (causan "Redirect not allowed for preflight" en CORS)
+app.url_map.strict_slashes = False
+# CORS explícito: preflight OPTIONS debe recibir 200 con headers, no redirect
+CORS(
+    app,
+    origins=["http://localhost:3000"],
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    supports_credentials=True,
+)
 
 # Registros
 app.register_blueprint(student_bp, url_prefix='/api/v1/estudiantes')

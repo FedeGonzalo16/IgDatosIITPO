@@ -18,10 +18,34 @@ def historial(uid):
     return jsonify(GradingService.get_historial_estudiante(uid))
 
 # --- CONVERSIONES ---
+@grading_bp.route('/reglas', methods=['GET'])
+def list_rules():
+    return jsonify(ConversionService.get_all_rules())
+
 @grading_bp.route('/reglas', methods=['POST'])
 def create_rule():
     uid = ConversionService.create_rule(request.json)
     return jsonify({"id": uid}), 201
+
+@grading_bp.route('/reglas/<regla_id>', methods=['GET'])
+def get_rule(regla_id):
+    regla = ConversionService.get_rule_by_id(regla_id)
+    if not regla:
+        return jsonify({"error": "Regla no encontrada"}), 404
+    return jsonify(regla)
+
+@grading_bp.route('/reglas/<regla_id>', methods=['PUT'])
+def update_rule(regla_id):
+    """Actualiza una regla; guarda el estado anterior en Cassandra (historico_reglas)."""
+    try:
+        data = request.json or {}
+        modificado_por = data.pop('modificado_por', None)
+        ConversionService.update_rule(regla_id, data, modificado_por=modificado_por)
+        return jsonify({"msg": "Regla actualizada"}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @grading_bp.route('/convertir', methods=['POST'])
 def aplicar():

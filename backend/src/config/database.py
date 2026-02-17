@@ -69,10 +69,16 @@ try:
     CASSANDRA_HOSTS = os.getenv('CASSANDRA_HOSTS', 'localhost').split(',')
     cluster = Cluster(CASSANDRA_HOSTS)
     cassandra_session = cluster.connect()
+    print(f"[INFO] Cassandra conectado exitosamente en {CASSANDRA_HOSTS}")
     # Aseguramos que el keyspace exista
      # Dentro del bloque try de Cassandra en database.py:
     cassandra_session.execute("""
-        CREATE TABLE IF NOT EXISTS edugrade_audit.entity_metadata (
+        CREATE KEYSPACE IF NOT EXISTS edugrade_audit
+        WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
+    """)
+    cassandra_session.set_keyspace('edugrade_audit')
+    cassandra_session.execute("""
+        CREATE TABLE IF NOT EXISTS entity_metadata (
             entity_type text,
             entity_id text,
             estado text,
@@ -81,7 +87,37 @@ try:
             PRIMARY KEY (entity_type, entity_id)
         )
     """)
-    cassandra_session.set_keyspace('edugrade_audit')
+    cassandra_session.execute("""
+        CREATE TABLE IF NOT EXISTS registro_auditoria (
+            id_estudiante text,
+            fecha_creacion timestamp,
+            id_auditoria uuid,
+            tipo_accion text,
+            nota_original text,
+            PRIMARY KEY (id_estudiante, fecha_creacion, id_auditoria)
+        )
+    """)
+    cassandra_session.execute("""
+        CREATE TABLE IF NOT EXISTS certificados_emitidos (
+            id_estudiante text,
+            id_certificado uuid,
+            fecha_emision timestamp,
+            tipo text,
+            carrera_nombre text,
+            snapshot text,
+            PRIMARY KEY (id_estudiante, id_certificado)
+        )
+    """)
+    cassandra_session.execute("""
+        CREATE TABLE IF NOT EXISTS historico_reglas (
+            id_regla text,
+            fecha_cambio timestamp,
+            id_historico uuid,
+            regla_anterior text,
+            modificado_por text,
+            PRIMARY KEY (id_regla, fecha_cambio)
+        ) WITH CLUSTERING ORDER BY (fecha_cambio DESC)
+    """)
 except Exception as e:
     print(f"[WARNING] Cassandra no disponible: {e}")
     cassandra_session = None

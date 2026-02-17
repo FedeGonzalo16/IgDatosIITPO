@@ -1,9 +1,21 @@
 from flask import Blueprint, request, jsonify
 from src.services.analytics_service import AnalyticsService
+from src.services.transcript_service import TranscriptService
 from src.config.database import get_mongo, get_neo4j
 from bson import ObjectId
 
 reports_bp = Blueprint('reports', __name__)
+
+@reports_bp.route('/certificado-analitico/<est_id>', methods=['GET'])
+def certificado_analitico(est_id):
+    """Genera el certificado analítico (reporte integral) del estudiante."""
+    carrera_nombre = request.args.get('carrera_nombre')
+    guardar_snapshot = request.args.get('guardar_snapshot', 'true').lower() == 'true'
+    try:
+        doc = TranscriptService.generar_certificado_analitico(est_id, carrera_nombre=carrera_nombre, guardar_snapshot=guardar_snapshot)
+        return jsonify(doc)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
 
 @reports_bp.route('/auditoria/<est_id>', methods=['GET'])
 def auditoria(est_id):
