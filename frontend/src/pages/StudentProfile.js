@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import Navbar from '../components/Navbar';
 import { ArrowLeft, Download, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { reportService } from '../services/api';
+import { descargarCertificadoAnalitico } from '../utils/certificadoAnalitico';
 import './StudentProfile.css';
 
 const StudentProfile = ({ user, onLogout }) => {
   const navigate = useNavigate();
+  const [reportLoading, setReportLoading] = useState(false);
   const [subjects] = useState([
     {
       id: 1,
@@ -53,30 +56,8 @@ const StudentProfile = ({ user, onLogout }) => {
     },
   ]);
 
-  const downloadReport = () => {
-    const reportContent = `
-REPORTE ACADÉMICO - ${user?.nombre || 'Estudiante'}
-Legajo: ${user?.legajo || 'N/A'}
-Fecha: ${new Date().toLocaleDateString('es-ES')}
-
-MATERIAS CURSADAS:
-${subjects.map(s => `
-${s.nombre} (${s.codigo})
-Estado: ${s.estado}
-Nota Final: ${s.nota || 'En curso'}
-Profesor: ${s.profesor}
-`).join('')}
-
-Este reporte fue generado automáticamente desde el Sistema EduGrade.
-    `;
-    
-    const element = document.createElement('a');
-    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportContent));
-    element.setAttribute('download', `reporte_academico_${user?.legajo || 'estudiante'}.txt`);
-    element.style.display = 'none';
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+  const handleDescargarAnalitico = () => {
+    descargarCertificadoAnalitico(reportService, user?._id || user?.id, user, setReportLoading);
   };
 
   return (
@@ -101,9 +82,9 @@ Este reporte fue generado automáticamente desde el Sistema EduGrade.
                 <p>Email: {user?.email}</p>
               </div>
             </div>
-            <button className="btn-download" onClick={downloadReport}>
+            <button className="btn-download" onClick={handleDescargarAnalitico} disabled={reportLoading}>
               <Download size={20} />
-              Descargar Reporte
+              {reportLoading ? 'Generando...' : 'Descargar analítico'}
             </button>
           </div>
 

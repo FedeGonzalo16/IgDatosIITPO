@@ -6,7 +6,8 @@ import {
   conversionService, 
   institutionService, 
   studentService, 
-  gradeService 
+  gradeService,
+  trajectoryService
 } from '../services/api';
 import './StudentMenuContent.css';
 
@@ -21,6 +22,27 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [trajectory, setTrajectory] = useState(null);
+  const [trajectoryLoading, setTrajectoryLoading] = useState(true);
+
+  useEffect(() => {
+    const loadTrajectory = async () => {
+      const studentId = user?._id || user?.id;
+      if (!studentId) {
+        setTrajectoryLoading(false);
+        return;
+      }
+      try {
+        const res = await trajectoryService.getStudentTrajectory(studentId);
+        setTrajectory(res.data);
+      } catch (err) {
+        console.error('Error loading trajectory:', err);
+      } finally {
+        setTrajectoryLoading(false);
+      }
+    };
+    loadTrajectory();
+  }, [user?._id, user?.id]);
 
   const handleSave = async () => {
     try {
@@ -62,11 +84,12 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
           <ArrowLeft size={20} />
         </button>
         <h2>Mi Perfil</h2>
-        {!isEditing ? (
-          <button className="btn-edit-profile" onClick={() => setIsEditing(true)}>
-            Editar Perfil
-          </button>
-        ) : (
+        <div className="profile-header-actions">
+          {!isEditing ? (
+            <button className="btn-edit-profile" onClick={() => setIsEditing(true)}>
+              Editar Perfil
+            </button>
+          ) : (
           <div style={{ display: 'flex', gap: '10px' }}>
             <button className="btn-cancel" onClick={() => {
               setIsEditing(false);
@@ -84,6 +107,7 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {successMessage && <div className="success-message">{successMessage}</div>}
@@ -174,6 +198,64 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
             <span>Total de Materias:</span>
             <strong>{stats?.totalSubjects || '0'}</strong>
           </div>
+        </div>
+
+        <div className="detail-card trajectory-section">
+          <h3>📈 Trayectoria Académica</h3>
+          {trajectoryLoading ? (
+            <p className="trajectory-loading">Cargando trayectoria...</p>
+          ) : trajectory ? (
+            <>
+              <div className="trajectory-block">
+                <h4>Materias en curso ({trajectory.materias_en_curso?.length || 0})</h4>
+                {(trajectory.materias_en_curso || []).length === 0 ? (
+                  <p className="trajectory-empty">Ninguna</p>
+                ) : (
+                  <ul className="trajectory-list">
+                    {(trajectory.materias_en_curso || []).map((m, idx) => (
+                      <li key={idx} className="trajectory-item"><strong>{m.nombre}</strong> ({m.codigo}) — Año {m.anio}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="trajectory-block">
+                <h4>Materias aprobadas ({trajectory.materias_aprobadas?.length || 0})</h4>
+                {(trajectory.materias_aprobadas || []).length === 0 ? (
+                  <p className="trajectory-empty">Ninguna</p>
+                ) : (
+                  <ul className="trajectory-list">
+                    {(trajectory.materias_aprobadas || []).map((m, idx) => (
+                      <li key={idx} className="trajectory-item approved"><strong>{m.nombre}</strong> ({m.codigo}) — Nota: {m.nota_final} — Año {m.anio}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="trajectory-block">
+                <h4>Materias reprobadas ({trajectory.materias_reprobadas?.length || 0})</h4>
+                {(trajectory.materias_reprobadas || []).length === 0 ? (
+                  <p className="trajectory-empty">Ninguna</p>
+                ) : (
+                  <ul className="trajectory-list">
+                    {(trajectory.materias_reprobadas || []).map((m, idx) => (
+                      <li key={idx} className="trajectory-item reprobada"><strong>{m.nombre}</strong> ({m.codigo}) — Nota: {m.nota_final} — Año {m.anio}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {trajectory.recursadas && trajectory.recursadas.length > 0 && (
+                <div className="trajectory-block">
+                  <h4>Recursadas</h4>
+                  <ul className="trajectory-list">
+                    {trajectory.recursadas.map((r, idx) => (
+                      <li key={idx} className="trajectory-item"><strong>{r.nombre}</strong> ({r.codigo}) — {r.veces} veces</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="trajectory-empty">No se pudo cargar la trayectoria.</p>
+          )}
         </div>
       </div>
     </div>

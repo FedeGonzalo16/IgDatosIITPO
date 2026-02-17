@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
-import { Users, BarChart3, Search, Filter, UserCheck, FileText, Plus, X } from 'lucide-react';
-import { studentService, subjectService, gradeService, institutionService, teacherService, reportService } from '../services/api';
+import { Users, BarChart3, Search, Filter, UserCheck, Plus, X, RefreshCw } from 'lucide-react';
+import { studentService, subjectService, gradeService, institutionService, teacherService, conversionService, gradingOperations } from '../services/api';
 import './AdminDashboard.css';
 
 const AdminDashboard = ({ user, onLogout }) => {
@@ -17,15 +17,74 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createFormData, setCreateFormData] = useState({});
   const [institutions, setInstitutions] = useState([]);
+  const [studentsList, setStudentsList] = useState([]);
+  const [subjectsList, setSubjectsList] = useState([]);
+  const [loadingStudentsSubjects, setLoadingStudentsSubjects] = useState(false);
+  const [conversionRules, setConversionRules] = useState([]);
+  const [showConversionModal, setShowConversionModal] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState(null);
+  const [ruleForm, setRuleForm] = useState({ codigo_regla: '', nombre: '', mapeo: [{ nota_origen: '', nota_destino: '' }] });
+  const [applyConversionForm, setApplyConversionForm] = useState({ calificacion_id: '', codigo_regla: '' });
+  const [calificacionesList, setCalificacionesList] = useState([]);
+  const [altaForm, setAltaForm] = useState({
+    inscribir: { estudiante_id: '', materia_id: '', anio_lectivo: new Date().getFullYear() },
+    cargarNota: { estudiante_id: '', materia_id: '', tipo_nota: 'final', valor: '' },
+    cerrarCursada: { estudiante_id: '', materia_id: '' },
+    registrar: { estudiante_id: '', materia_id: '', tipo: 'FINAL', nota: '' }
+  });
   const navigate = useNavigate();
 
-  // Cargar datos iniciales
+  // Cargar listas para dropdowns al montar (estudiantes, materias) y al cambiar de tab
+  useEffect(() => {
+    loadStudentsAndSubjects();
+  }, []);
+
   useEffect(() => {
     loadData();
     if (activeTab === 'subjects' || activeTab === 'institutions') {
       loadInstitutions();
     }
+    if (activeTab === 'grades') {
+      loadStudentsAndSubjects();
+    }
   }, [activeTab, filters]);
+
+  const loadStudentsAndSubjects = async () => {
+    setLoadingStudentsSubjects(true);
+    try {
+      const [stRes, subRes] = await Promise.all([
+        studentService.getAll().catch((err) => {
+          console.error('Error fetching students:', err?.response?.data || err);
+          return { data: [] };
+        }),
+        subjectService.getAll().catch((err) => {
+          console.error('Error fetching subjects:', err?.response?.data || err);
+          return { data: [] };
+        })
+      ]);
+      const st = Array.isArray(stRes?.data) ? stRes.data : (stRes?.data?.data || []);
+      const sub = Array.isArray(subRes?.data) ? subRes.data : (subRes?.data?.data || []);
+      setStudentsList(st);
+      setSubjectsList(sub);
+    } catch (e) {
+      console.error('Error loading students/subjects:', e);
+      setStudentsList([]);
+      setSubjectsList([]);
+    } finally {
+      setLoadingStudentsSubjects(false);
+    }
+  };
+
+  const loadConversionRules = async () => {
+    try {
+      const res = await conversionService.getAllRules();
+      setConversionRules(res.data || []);
+    } catch (e) {
+      console.error('Error loading rules:', e);
+      setConversionRules([]);
+    }
+  };
+
 
   const loadInstitutions = async () => {
     try {
@@ -113,30 +172,6 @@ const AdminDashboard = ({ user, onLogout }) => {
           nombre: `${t.nombre} ${t.apellido}`,
           especialidad: t.especialidad || 'N/A'
         }));
-      } else if (activeTab === 'reports') {
-        // Cargar estadísticas generales
-        try {
-          const [approvalRes, gradeStatsRes] = await Promise.all([
-            reportService.getApprovalStats(),
-            reportService.getGradeStats()
-          ]);
-          responseData = [{
-            tipo: 'Aprobación',
-            tasa_aprobacion: approvalRes.data?.tasa_aprobacion || 0,
-            aprobadas: approvalRes.data?.aprobadas || 0,
-            reprobadas: approvalRes.data?.reprobadas || 0,
-            total: approvalRes.data?.total_cursadas || 0
-          }, {
-            tipo: 'Calificaciones',
-            promedio: gradeStatsRes.data?.promedio || 0,
-            minima: gradeStatsRes.data?.minima || 0,
-            maxima: gradeStatsRes.data?.maxima || 0,
-            total: gradeStatsRes.data?.total || 0
-          }];
-        } catch (error) {
-          console.error('Error loading reports:', error);
-          responseData = [];
-        }
       }
 
       // Aplicar filtros
@@ -176,7 +211,6 @@ const AdminDashboard = ({ user, onLogout }) => {
             <th>Estado</th>
             <th>Institución</th>
             <th>Promedio</th>
-            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -188,10 +222,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <td><span className={`status-badge ${student.estado.toLowerCase()}`}>{student.estado}</span></td>
               <td>{student.institucion}</td>
               <td><strong>{student.promedio}</strong></td>
-              <td className="action-buttons">
-                <button className="btn-view">Ver</button>
-                <button className="btn-edit">Editar</button>
-              </td>
             </tr>
           ))}
         </tbody>
@@ -271,37 +301,184 @@ const AdminDashboard = ({ user, onLogout }) => {
     </div>
   );
 
-  const renderGradesTable = () => (
-    <div className="table-container">
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>Estudiante</th>
-            <th>Materia</th>
-            <th>Nota</th>
-            <th>Tipo</th>
-            <th>Profesor</th>
-            <th>Fecha</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map(grade => (
-            <tr key={grade.id}>
-              <td>{grade.estudiante}</td>
-              <td>{grade.materia}</td>
-              <td><strong>{grade.nota_original}</strong></td>
-              <td>{grade.tipo}</td>
-              <td>{grade.profesor}</td>
-              <td>{new Date(grade.fecha).toLocaleDateString('es-ES')}</td>
-              <td className="action-buttons">
-                <button className="btn-view">Ver</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+  const handleInscribir = async (e) => {
+    e.preventDefault();
+    try {
+      await gradingOperations.inscribirAlumno({
+        estudiante_id: altaForm.inscribir.estudiante_id,
+        materia_id: altaForm.inscribir.materia_id,
+        anio_lectivo: altaForm.inscribir.anio_lectivo
+      });
+      alert('Inscripción realizada.');
+      loadData();
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleCargarNota = async (e) => {
+    e.preventDefault();
+    try {
+      await gradingOperations.cargarNota({
+        estudiante_id: altaForm.cargarNota.estudiante_id,
+        materia_id: altaForm.cargarNota.materia_id,
+        tipo_nota: altaForm.cargarNota.tipo_nota,
+        valor: Number(altaForm.cargarNota.valor)
+      });
+      alert('Nota cargada.');
+      loadData();
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleCerrarCursada = async (e) => {
+    e.preventDefault();
+    try {
+      await gradingOperations.cerrarCursada({
+        estudiante_id: altaForm.cerrarCursada.estudiante_id,
+        materia_id: altaForm.cerrarCursada.materia_id
+      });
+      alert('Cursada cerrada (APROBADO/REPROBADO según notas).');
+      loadData();
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleRegistrarCalificacion = async (e) => {
+    e.preventDefault();
+    try {
+      await gradeService.create({
+        estudiante_id: altaForm.registrar.estudiante_id,
+        materia_id: altaForm.registrar.materia_id,
+        valor_original: { tipo: altaForm.registrar.tipo, nota: altaForm.registrar.nota }
+      });
+      alert('Calificación registrada.');
+      setAltaForm(prev => ({ ...prev, registrar: { ...prev.registrar, tipo: 'FINAL', nota: '' } }));
+      loadData();
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const studentLabel = (s) => [s.nombre, s.apellido].filter(Boolean).join(' ') || s.email || s._id || '—';
+  const subjectLabel = (m) => (m.codigo ? `${m.codigo} - ` : '') + (m.nombre || m._id || '—');
+
+  const renderGradesAltaPanel = () => (
+    <div className="alta-panel table-container">
+      <div className="alta-panel-header">
+        <h3>Alta de calificación</h3>
+        <button type="button" className="btn-submit-small btn-outline" onClick={loadStudentsAndSubjects} disabled={loadingStudentsSubjects} title="Recargar listas de estudiantes y materias">
+          {loadingStudentsSubjects ? 'Cargando...' : 'Actualizar listas'}
+        </button>
+      </div>
+      <div className="alta-grid">
+        <div className="alta-card">
+          <h4>Inscribir alumno a materia</h4>
+          <form onSubmit={handleInscribir} className="alta-form">
+            <select value={altaForm.inscribir.estudiante_id} onChange={e => setAltaForm(prev => ({ ...prev, inscribir: { ...prev.inscribir, estudiante_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : studentsList.length === 0 ? 'No hay estudiantes' : 'Estudiante'}</option>
+              {studentsList.map(s => <option key={s._id} value={s._id}>{studentLabel(s)}</option>)}
+            </select>
+            <select value={altaForm.inscribir.materia_id} onChange={e => setAltaForm(prev => ({ ...prev, inscribir: { ...prev.inscribir, materia_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : subjectsList.length === 0 ? 'No hay materias' : 'Materia'}</option>
+              {subjectsList.map(m => <option key={m._id} value={m._id}>{subjectLabel(m)}</option>)}
+            </select>
+            <input type="number" min="2020" max="2030" value={altaForm.inscribir.anio_lectivo} onChange={e => setAltaForm(prev => ({ ...prev, inscribir: { ...prev.inscribir, anio_lectivo: +e.target.value } }))} />
+            <button type="submit" className="btn-submit-small">Inscribir</button>
+          </form>
+        </div>
+        <div className="alta-card">
+          <h4>Cargar nota</h4>
+          <form onSubmit={handleCargarNota} className="alta-form">
+            <select value={altaForm.cargarNota.estudiante_id} onChange={e => setAltaForm(prev => ({ ...prev, cargarNota: { ...prev.cargarNota, estudiante_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : studentsList.length === 0 ? 'No hay estudiantes' : 'Estudiante'}</option>
+              {studentsList.map(s => <option key={s._id} value={s._id}>{studentLabel(s)}</option>)}
+            </select>
+            <select value={altaForm.cargarNota.materia_id} onChange={e => setAltaForm(prev => ({ ...prev, cargarNota: { ...prev.cargarNota, materia_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : subjectsList.length === 0 ? 'No hay materias' : 'Materia'}</option>
+              {subjectsList.map(m => <option key={m._id} value={m._id}>{m.codigo || m.nombre || m._id}</option>)}
+            </select>
+            <select value={altaForm.cargarNota.tipo_nota} onChange={e => setAltaForm(prev => ({ ...prev, cargarNota: { ...prev.cargarNota, tipo_nota: e.target.value } }))}>
+              <option value="primer_parcial">1er parcial</option>
+              <option value="segundo_parcial">2do parcial</option>
+              <option value="final">Final</option>
+              <option value="previo">Previo</option>
+            </select>
+            <input type="number" step="0.01" min="0" max="10" placeholder="Nota" value={altaForm.cargarNota.valor} onChange={e => setAltaForm(prev => ({ ...prev, cargarNota: { ...prev.cargarNota, valor: e.target.value } }))} required />
+            <button type="submit" className="btn-submit-small">Cargar</button>
+          </form>
+        </div>
+        <div className="alta-card">
+          <h4>Cerrar cursada</h4>
+          <form onSubmit={handleCerrarCursada} className="alta-form">
+            <select value={altaForm.cerrarCursada.estudiante_id} onChange={e => setAltaForm(prev => ({ ...prev, cerrarCursada: { ...prev.cerrarCursada, estudiante_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : studentsList.length === 0 ? 'No hay estudiantes' : 'Estudiante'}</option>
+              {studentsList.map(s => <option key={s._id} value={s._id}>{studentLabel(s)}</option>)}
+            </select>
+            <select value={altaForm.cerrarCursada.materia_id} onChange={e => setAltaForm(prev => ({ ...prev, cerrarCursada: { ...prev.cerrarCursada, materia_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : subjectsList.length === 0 ? 'No hay materias' : 'Materia'}</option>
+              {subjectsList.map(m => <option key={m._id} value={m._id}>{m.codigo || m.nombre || m._id}</option>)}
+            </select>
+            <button type="submit" className="btn-submit-small">Cerrar cursada</button>
+          </form>
+        </div>
+        <div className="alta-card">
+          <h4>Registrar calificación (libro)</h4>
+          <form onSubmit={handleRegistrarCalificacion} className="alta-form">
+            <select value={altaForm.registrar.estudiante_id} onChange={e => setAltaForm(prev => ({ ...prev, registrar: { ...prev.registrar, estudiante_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : studentsList.length === 0 ? 'No hay estudiantes' : 'Estudiante'}</option>
+              {studentsList.map(s => <option key={s._id} value={s._id}>{studentLabel(s)}</option>)}
+            </select>
+            <select value={altaForm.registrar.materia_id} onChange={e => setAltaForm(prev => ({ ...prev, registrar: { ...prev.registrar, materia_id: e.target.value } }))} required disabled={loadingStudentsSubjects}>
+              <option value="">{loadingStudentsSubjects ? 'Cargando...' : subjectsList.length === 0 ? 'No hay materias' : 'Materia'}</option>
+              {subjectsList.map(m => <option key={m._id} value={m._id}>{m.codigo || m.nombre || m._id}</option>)}
+            </select>
+            <select value={altaForm.registrar.tipo} onChange={e => setAltaForm(prev => ({ ...prev, registrar: { ...prev.registrar, tipo: e.target.value } }))}>
+              <option value="PARCIAL_1">Parcial 1</option>
+              <option value="PARCIAL_2">Parcial 2</option>
+              <option value="FINAL">Final</option>
+              <option value="PREVIO">Previo</option>
+            </select>
+            <input type="text" placeholder="Nota (ej: 7 o A)" value={altaForm.registrar.nota} onChange={e => setAltaForm(prev => ({ ...prev, registrar: { ...prev.registrar, nota: e.target.value } }))} required />
+            <button type="submit" className="btn-submit-small">Registrar</button>
+          </form>
+        </div>
+      </div>
     </div>
+  );
+
+  const renderGradesTable = () => (
+    <>
+      {renderGradesAltaPanel()}
+      <div className="table-container">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Estudiante</th>
+              <th>Materia</th>
+              <th>Nota</th>
+              <th>Tipo</th>
+              <th>Profesor</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map(grade => (
+              <tr key={grade.id}>
+                <td>{grade.estudiante}</td>
+                <td>{grade.materia}</td>
+                <td><strong>{grade.nota_original}</strong></td>
+                <td>{grade.tipo}</td>
+                <td>{grade.profesor}</td>
+                <td>{new Date(grade.fecha).toLocaleDateString('es-ES')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 
   const renderInstitutionsTable = () => (
@@ -324,7 +501,6 @@ const AdminDashboard = ({ user, onLogout }) => {
             <th>Ubicación</th>
             <th>Estudiantes</th>
             <th>Materias</th>
-            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -336,10 +512,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <td>{inst.ubicacion}</td>
               <td>{inst.estudiantes}</td>
               <td>{inst.materias}</td>
-              <td className="action-buttons">
-                <button className="btn-view" onClick={() => {/* TODO: Ver detalles */}}>Ver</button>
-                <button className="btn-edit" onClick={() => {/* TODO: Editar */}}>Editar</button>
-              </td>
             </tr>
           ))}
         </tbody>
@@ -361,7 +533,6 @@ const AdminDashboard = ({ user, onLogout }) => {
             <th>Legajo</th>
             <th>Nombre</th>
             <th>Especialidad</th>
-            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -370,11 +541,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <td><strong>{teacher.legajo}</strong></td>
               <td>{teacher.nombre}</td>
               <td>{teacher.especialidad}</td>
-              <td className="action-buttons">
-                <button className="btn-view" onClick={() => {/* TODO: Ver detalles */}}>Ver</button>
-                <button className="btn-edit" onClick={() => {/* TODO: Editar */}}>Editar</button>
-                <button className="btn-delete" onClick={() => {/* TODO: Eliminar */}}>Eliminar</button>
-              </td>
             </tr>
           ))}
         </tbody>
@@ -382,55 +548,111 @@ const AdminDashboard = ({ user, onLogout }) => {
     </div>
   );
 
-  const renderReportsView = () => (
-    <div className="reports-container">
-      <h3>Reportes y Estadísticas</h3>
-      <div className="reports-grid">
-        {data.map((report, idx) => (
-          <div key={idx} className="report-card">
-            <h4>{report.tipo}</h4>
-            {report.tasa_aprobacion !== undefined && (
-              <>
-                <div className="stat-item">
-                  <span>Tasa de Aprobación:</span>
-                  <strong>{report.tasa_aprobacion.toFixed(2)}%</strong>
-                </div>
-                <div className="stat-item">
-                  <span>Aprobadas:</span>
-                  <strong className="success">{report.aprobadas}</strong>
-                </div>
-                <div className="stat-item">
-                  <span>Reprobadas:</span>
-                  <strong className="danger">{report.reprobadas}</strong>
-                </div>
-                <div className="stat-item">
-                  <span>Total:</span>
-                  <strong>{report.total}</strong>
-                </div>
-              </>
-            )}
-            {report.promedio !== undefined && (
-              <>
-                <div className="stat-item">
-                  <span>Promedio:</span>
-                  <strong>{report.promedio.toFixed(2)}</strong>
-                </div>
-                <div className="stat-item">
-                  <span>Mínima:</span>
-                  <strong>{report.minima}</strong>
-                </div>
-                <div className="stat-item">
-                  <span>Máxima:</span>
-                  <strong>{report.maxima}</strong>
-                </div>
-                <div className="stat-item">
-                  <span>Total Calificaciones:</span>
-                  <strong>{report.total}</strong>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+  const handleCreateRule = async (e) => {
+    e.preventDefault();
+    try {
+      await conversionService.createRule({
+        codigo_regla: ruleForm.codigo_regla,
+        nombre: ruleForm.nombre,
+        mapeo: ruleForm.mapeo.filter(m => m.nota_origen !== '' || m.nota_destino !== '')
+      });
+      setShowConversionModal(false);
+      setRuleForm({ codigo_regla: '', nombre: '', mapeo: [{ nota_origen: '', nota_destino: '' }] });
+      loadConversionRules();
+      alert('Regla creada.');
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleUpdateRule = async (e) => {
+    e.preventDefault();
+    if (!editingRuleId) return;
+    try {
+      await conversionService.updateRule(editingRuleId, {
+        codigo_regla: ruleForm.codigo_regla,
+        nombre: ruleForm.nombre,
+        mapeo: ruleForm.mapeo.filter(m => m.nota_origen !== '' || m.nota_destino !== '')
+      });
+      setShowConversionModal(false);
+      setEditingRuleId(null);
+      setRuleForm({ codigo_regla: '', nombre: '', mapeo: [{ nota_origen: '', nota_destino: '' }] });
+      loadConversionRules();
+      alert('Regla actualizada.');
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const openEditRule = (rule) => {
+    setEditingRuleId(rule._id);
+    setRuleForm({
+      codigo_regla: rule.codigo_regla || '',
+      nombre: rule.nombre || '',
+      mapeo: (rule.mapeo && rule.mapeo.length) ? rule.mapeo : [{ nota_origen: '', nota_destino: '' }]
+    });
+    setShowConversionModal(true);
+  };
+
+  const openNewRule = () => {
+    setEditingRuleId(null);
+    setRuleForm({ codigo_regla: '', nombre: '', mapeo: [{ nota_origen: '', nota_destino: '' }] });
+    setShowConversionModal(true);
+  };
+
+  const handleApplyConversion = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await conversionService.applyConversion(applyConversionForm);
+      alert('Valor convertido: ' + res.data?.valor_convertido);
+      loadData();
+    } catch (err) {
+      alert('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const renderConversionsView = () => (
+    <div className="table-container">
+      <div className="table-header">
+        <h3>Reglas de conversión</h3>
+        <button className="btn-add" onClick={openNewRule}><Plus size={16} /> Nueva regla</button>
+      </div>
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Mapeo (origen → destino)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {conversionRules.map(r => (
+            <tr key={r._id}>
+              <td><strong>{r.codigo_regla}</strong></td>
+              <td>{r.nombre || '-'}</td>
+              <td>{(r.mapeo || []).map(m => `${m.nota_origen}→${m.nota_destino}`).join(', ') || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {conversionRules.length === 0 && !loading && <p className="no-data-inline">No hay reglas. Crear una con &quot;Nueva regla&quot;.</p>}
+      <div className="alta-panel" style={{ marginTop: '24px' }}>
+        <h3>Aplicar conversión a una calificación</h3>
+        <form onSubmit={handleApplyConversion} className="alta-form inline-form">
+          <select value={applyConversionForm.calificacion_id} onChange={e => setApplyConversionForm(prev => ({ ...prev, calificacion_id: e.target.value }))} required>
+            <option value="">Seleccionar calificación</option>
+            {calificacionesList.slice(0, 50).map(c => (
+              <option key={c._id} value={c._id}>
+                {c._id.slice(-6)} — nota: {c.valor_original?.nota ?? 'N/A'}
+              </option>
+            ))}
+          </select>
+          <select value={applyConversionForm.codigo_regla} onChange={e => setApplyConversionForm(prev => ({ ...prev, codigo_regla: e.target.value }))} required>
+            <option value="">Regla</option>
+            {conversionRules.map(r => <option key={r._id} value={r.codigo_regla}>{r.codigo_regla}</option>)}
+          </select>
+          <button type="submit" className="btn-submit-small">Aplicar</button>
+        </form>
       </div>
     </div>
   );
@@ -447,8 +669,6 @@ const AdminDashboard = ({ user, onLogout }) => {
         return renderInstitutionsTable();
       case 'teachers':
         return renderTeachersTable();
-      case 'reports':
-        return renderReportsView();
       default:
         return null;
     }
@@ -501,13 +721,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <UserCheck size={20} />
               Profesores
             </button>
-            <button
-              className={`tab-button ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              <FileText size={20} />
-              Reportes
-            </button>
           </div>
 
           {/* Search and Filters */}
@@ -547,6 +760,50 @@ const AdminDashboard = ({ user, onLogout }) => {
           {data.length === 0 && !loading && (
             <div className="no-data">
               <p>No se encontraron resultados</p>
+            </div>
+          )}
+
+          {/* Modal Conversión (crear/editar regla) */}
+          {showConversionModal && (
+            <div className="modal-overlay" onClick={() => { setShowConversionModal(false); setEditingRuleId(null); }}>
+              <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{editingRuleId ? 'Editar regla' : 'Nueva regla de conversión'}</h2>
+                  <button className="modal-close" onClick={() => { setShowConversionModal(false); setEditingRuleId(null); }}><X size={24} /></button>
+                </div>
+                <form onSubmit={editingRuleId ? handleUpdateRule : handleCreateRule}>
+                  <div className="form-group">
+                    <label>Código regla *</label>
+                    <input type="text" value={ruleForm.codigo_regla} onChange={e => setRuleForm(prev => ({ ...prev, codigo_regla: e.target.value }))} placeholder="Ej: ESCALA_10_A_4" required />
+                  </div>
+                  <div className="form-group">
+                    <label>Nombre</label>
+                    <input type="text" value={ruleForm.nombre} onChange={e => setRuleForm(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Escala 0-10 a A-D" />
+                  </div>
+                  <div className="form-group">
+                    <label>Mapeo (nota_origen → nota_destino)</label>
+                    {ruleForm.mapeo.map((m, i) => (
+                      <div key={i} className="mapeo-row">
+                        <input type="text" placeholder="Origen" value={m.nota_origen} onChange={e => {
+                          const next = [...ruleForm.mapeo]; next[i] = { ...next[i], nota_origen: e.target.value }; setRuleForm(prev => ({ ...prev, mapeo: next }));
+                        }} />
+                        <span>→</span>
+                        <input type="text" placeholder="Destino" value={m.nota_destino} onChange={e => {
+                          const next = [...ruleForm.mapeo]; next[i] = { ...next[i], nota_destino: e.target.value }; setRuleForm(prev => ({ ...prev, mapeo: next }));
+                        }} />
+                        {ruleForm.mapeo.length > 1 && (
+                          <button type="button" className="btn-delete-small" onClick={() => setRuleForm(prev => ({ ...prev, mapeo: prev.mapeo.filter((_, j) => j !== i) }))}>Quitar</button>
+                        )}
+                      </div>
+                    ))}
+                    <button type="button" className="btn-add-small" onClick={() => setRuleForm(prev => ({ ...prev, mapeo: [...prev.mapeo, { nota_origen: '', nota_destino: '' }] }))}>+ Par</button>
+                  </div>
+                  <div className="modal-actions">
+                    <button type="button" className="btn-cancel" onClick={() => { setShowConversionModal(false); setEditingRuleId(null); }}>Cancelar</button>
+                    <button type="submit" className="btn-submit">{editingRuleId ? 'Guardar' : 'Crear'}</button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
 

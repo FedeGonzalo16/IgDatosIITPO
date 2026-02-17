@@ -73,7 +73,7 @@ export const studentService = {
     apiClient.delete(`/estudiantes/${id}`),
 
   getByEmail: (email) =>
-    apiClient.get(`/estudiantes/email/${email}`)
+    apiClient.get(`/estudiantes/email/${encodeURIComponent(email)}`)
 };
 
 // ==========================================
@@ -146,6 +146,15 @@ export const institutionService = {
 };
 
 // ==========================================
+// CARRERAS (para reportes / certificado analítico)
+// ==========================================
+
+export const carreraService = {
+  getAll: () => apiClient.get('/academic/carreras'),
+  getById: (id) => apiClient.get(`/academic/carreras/${id}`)
+};
+
+// ==========================================
 // PROFESORES
 // ==========================================
 
@@ -187,7 +196,11 @@ export const reportService = {
     apiClient.get(`/reportes/auditoria/${studentId}`),
   
   getRegional: (region) =>
-    apiClient.get(`/reportes/region/${region}`)
+    apiClient.get(`/reportes/region/${region}`),
+
+  /** Certificado analítico: reporte integral (promedio histórico, % avance, snapshot opcional) */
+  getCertificadoAnalitico: (studentId, params = {}) =>
+    apiClient.get(`/reportes/certificado-analitico/${studentId}`, { params })
 };
 
 // ==========================================
@@ -207,8 +220,17 @@ export const trajectoryService = {
 // ==========================================
 
 export const conversionService = {
+  getAllRules: () =>
+    apiClient.get('/calificaciones/reglas'),
+  
+  getRuleById: (id) =>
+    apiClient.get(`/calificaciones/reglas/${id}`),
+  
   createRule: (data) =>
     apiClient.post('/calificaciones/reglas', data),
+  
+  updateRule: (id, data) =>
+    apiClient.put(`/calificaciones/reglas/${id}`, data),
   
   applyConversion: (data) =>
     apiClient.post('/calificaciones/convertir', data)

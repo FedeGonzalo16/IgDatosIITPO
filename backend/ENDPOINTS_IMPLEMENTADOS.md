@@ -46,6 +46,19 @@ Este documento lista todos los endpoints implementados en el backend y su estado
 
 ---
 
+### 3b. Carreras (`/api/v1/academic/carreras`)
+
+- ✅ `POST /carreras` - Crear carrera
+- ✅ `GET /carreras` - Obtener todas las carreras
+- ✅ `GET /carreras/<uid>` - Obtener carrera por ID
+- ✅ `POST /carreras/<carrera_id>/materias/<materia_id>` - Agregar materia a carrera
+- ✅ `GET /carreras/<carrera_id>/materias` - Materias que contiene la carrera
+- ✅ `GET /carreras/<carrera_id>/faltantes/<est_id>` - Materias que le faltan al estudiante para recibirse
+
+**Frontend:** ❌ Pendiente de integración
+
+---
+
 ### 4. Calificaciones (`/api/v1/calificaciones`)
 
 - ✅ `POST /` - Registrar calificación
@@ -75,9 +88,12 @@ Este documento lista todos los endpoints implementados en el backend y su estado
 
 ---
 
-### 6. Conversiones (`/api/v1/calificaciones`)
+### 6. Conversiones / Reglas (`/api/v1/calificaciones`)
 
+- ✅ `GET /reglas` - Listar todas las reglas de conversión
 - ✅ `POST /reglas` - Crear regla de conversión
+- ✅ `GET /reglas/<regla_id>` - Obtener regla por ID
+- ✅ `PUT /reglas/<regla_id>` - Actualizar regla (auditoría en Cassandra: historico_reglas)
 - ✅ `POST /convertir` - Aplicar conversión de nota
 
 **Frontend:** ⚠️ Pendiente de integración
@@ -95,6 +111,8 @@ Este documento lista todos los endpoints implementados en el backend y su estado
 
 ### 8. Reportes (`/api/v1/reportes`)
 
+- ✅ `GET /certificado-analitico/<est_id>` - Certificado analítico (reporte integral: datos alumno + materias aprobadas + promedio histórico + % avance; opcional snapshot en Cassandra)
+  - Query: `?carrera_nombre=...&guardar_snapshot=true|false`
 - ✅ `GET /auditoria/<est_id>` - Obtener auditoría de estudiante
 - ✅ `GET /region/<region>` - Obtener reporte geográfico
 - ✅ `GET /estudiante/<est_id>` - Reporte completo de estudiante
@@ -135,18 +153,20 @@ Todas las dependencias están listadas en `requirements.txt`:
 - Gestión de Profesores
 - Visualización de Trayectorias
 - Reportes y Analytics
-- Conversión de Notas
+- Conversión de Notas (listar/editar reglas)
+- Certificado analítico y Carreras
 - Auditoría
 
 ---
 
-## 🚀 Próximos Pasos
+## 🚀 Próximos Pasos (Frontend)
 
 1. **Actualizar StudentDashboard** para usar servicios reales
 2. **Crear componentes de visualización**:
    - Gráficos de trayectorias
    - Tablas de reportes
-   - Formularios de conversión
+   - Formularios de conversión (GET/PUT reglas)
+   - Certificado analítico y materias faltantes por carrera
 3. **Implementar visualizaciones de Neo4j**:
    - Grafo de relaciones académicas
    - Trayectorias visuales
@@ -155,7 +175,6 @@ Todas las dependencias están listadas en `requirements.txt`:
    - Gráficos de aprobación
    - Reportes geográficos
 
----
 
-**Última actualización:** 2024
+
 

@@ -9,7 +9,7 @@ import {
   ConvertGrades
 } from '../components/StudentMenuContent';
 import { BookOpen, CheckCircle, Target, TrendingUp } from 'lucide-react';
-import { gradeService, trajectoryService } from '../services/api';
+import { gradeService } from '../services/api';
 import './StudentDashboard.css';
 
 const StudentDashboard = ({ user, onLogout }) => {
@@ -166,9 +166,6 @@ const StudentDashboard = ({ user, onLogout }) => {
     }
     if (activeMenu === 'convertir') {
       return <ConvertGrades historial={historial} user={user} onBack={() => setActiveMenu('inicio')} />;
-    }
-    if (activeMenu === 'trayectoria') {
-      return <TrajectoryView user={user} onBack={() => setActiveMenu('inicio')} />;
     }
 
     const materiasEnCurso = historial.filter(h => h.estado === 'EN_CURSO' || !h.fecha_cierre);
@@ -350,97 +347,6 @@ const StudentDashboard = ({ user, onLogout }) => {
         </main>
       </div>
     </>
-  );
-};
-
-// Componente de Trayectoria
-const TrajectoryView = ({ user, onBack }) => {
-  const [trajectory, setTrajectory] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadTrajectory();
-  }, []);
-
-  const loadTrajectory = async () => {
-    try {
-      const studentId = user?._id || user?.id;
-      if (studentId) {
-        const res = await trajectoryService.getStudentTrajectory(studentId);
-        setTrajectory(res.data);
-      }
-    } catch (error) {
-      console.error('Error loading trajectory:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="menu-content">
-        <div className="content-header">
-          <button className="back-btn" onClick={onBack}>
-            ← Volver
-          </button>
-          <h2>Mi Trayectoria</h2>
-        </div>
-        <div className="loading-container">Cargando trayectoria...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="menu-content">
-      <div className="content-header">
-        <button className="back-btn" onClick={onBack}>
-          ← Volver
-        </button>
-        <h2>Mi Trayectoria Académica</h2>
-      </div>
-
-      {trajectory && (
-        <div className="trajectory-container">
-          <div className="trajectory-section">
-            <h3>Materias en Curso ({trajectory.materias_en_curso?.length || 0})</h3>
-            {trajectory.materias_en_curso?.map((m, idx) => (
-              <div key={idx} className="trajectory-item">
-                <strong>{m.nombre}</strong> ({m.codigo}) - Año {m.anio}
-              </div>
-            ))}
-          </div>
-
-          <div className="trajectory-section">
-            <h3>Materias Aprobadas ({trajectory.materias_aprobadas?.length || 0})</h3>
-            {trajectory.materias_aprobadas?.map((m, idx) => (
-              <div key={idx} className="trajectory-item approved">
-                <strong>{m.nombre}</strong> ({m.codigo}) - Nota: {m.nota_final} - Año {m.anio}
-              </div>
-            ))}
-          </div>
-
-          <div className="trajectory-section">
-            <h3>Materias Reprobadas ({trajectory.materias_reprobadas?.length || 0})</h3>
-            {trajectory.materias_reprobadas?.map((m, idx) => (
-              <div key={idx} className="trajectory-item reprobada">
-                <strong>{m.nombre}</strong> ({m.codigo}) - Nota: {m.nota_final} - Año {m.anio}
-              </div>
-            ))}
-          </div>
-
-          {trajectory.recursadas && trajectory.recursadas.length > 0 && (
-            <div className="trajectory-section">
-              <h3>Recursadas</h3>
-              {trajectory.recursadas.map((r, idx) => (
-                <div key={idx} className="trajectory-item">
-                  <strong>{r.nombre}</strong> ({r.codigo}) - {r.veces} veces
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   );
 };
 
