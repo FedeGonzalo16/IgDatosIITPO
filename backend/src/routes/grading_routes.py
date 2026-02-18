@@ -5,7 +5,7 @@ from src.services.conversion_service import ConversionService
 grading_bp = Blueprint('grading', __name__)
 
 # --- CALIFICACIONES ---
-@grading_bp.route('/', methods=['POST'])
+@grading_bp.route('', methods=['POST'])
 def registrar():
     try:
         uid = GradingService.registrar_calificacion(request.json)
@@ -56,7 +56,7 @@ def aplicar():
         return jsonify({"error": str(e)}), 400
 
 # CRUD completo de calificaciones
-@grading_bp.route('/', methods=['GET'])
+@grading_bp.route('', methods=['GET'])
 def get_all():
     return jsonify(GradingService.get_all())
 

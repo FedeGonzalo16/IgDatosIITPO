@@ -224,26 +224,45 @@ Este reporte fue generado automáticamente desde el Sistema EduGrade.
           <div className="stats-section">
             <h2>📊 Estadísticas Académicas</h2>
             <div className="stats-cards">
-              <div className="stat-box">
-                <BarChart3 size={28} />
-                <h4>Promedio General</h4>
-                <p className="stat-value">8.33</p>
-              </div>
-              <div className="stat-box">
-                <BarChart3 size={28} />
-                <h4>Materias Aprobadas</h4>
-                <p className="stat-value">{subjects.filter(s => s.estado?.toUpperCase() === 'APROBADO' || s.estado?.toUpperCase() === 'CURSÓ').length}</p>
-              </div>
-              <div className="stat-box">
-                <BarChart3 size={28} />
-                <h4>En Curso</h4>
-                <p className="stat-value">{subjects.filter(s => s.estado?.toUpperCase() === 'EN_CURSO' || s.estado?.toUpperCase() === 'CURSANDO').length}</p>
-              </div>
-              <div className="stat-box">
-                <BarChart3 size={28} />
-                <h4>Tasa de Aprobación</h4>
-                <p className="stat-value">100%</p>
-              </div>
+              {(() => {
+                const normalize = (str) => (str || '').toString().toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, '_');
+
+                const total = subjects.length;
+                const approvedCount = subjects.filter(s => normalize(s.estado).includes('APROB')).length;
+                const inProgressCount = subjects.filter(s => {
+                  const ns = normalize(s.estado);
+                  return ns.includes('CURS') || ns.includes('EN_CURSO') || ns.includes('ENCURSO');
+                }).length;
+                const gradeNumbers = subjects.map(s => parseFloat(s.nota)).filter(n => !isNaN(n));
+                const average = gradeNumbers.length ? (gradeNumbers.reduce((a, b) => a + b, 0) / gradeNumbers.length) : null;
+                const finishedCount = Math.max(0, total - inProgressCount);
+                const approvalRate = finishedCount > 0 ? (approvedCount / finishedCount) * 100 : 0;
+
+                return (
+                  <>
+                    <div className="stat-box">
+                      <BarChart3 size={28} />
+                      <h4>Promedio General</h4>
+                      <p className="stat-value">{average !== null ? average.toFixed(2) : 'N/A'}</p>
+                    </div>
+                    <div className="stat-box">
+                      <BarChart3 size={28} />
+                      <h4>Materias Aprobadas</h4>
+                      <p className="stat-value">{approvedCount}</p>
+                    </div>
+                    <div className="stat-box">
+                      <BarChart3 size={28} />
+                      <h4>En Curso</h4>
+                      <p className="stat-value">{inProgressCount}</p>
+                    </div>
+                    <div className="stat-box">
+                      <BarChart3 size={28} />
+                      <h4>Tasa de Aprobación</h4>
+                      <p className="stat-value">{finishedCount > 0 ? `${approvalRate.toFixed(1)}%` : 'N/A'}</p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
