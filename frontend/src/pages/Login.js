@@ -11,69 +11,53 @@ const Login = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      // Buscar estudiante por email
-      let userData = null;
-      try {
-        const response = await studentService.getByEmail(email);
-        if (response.data) {
-          userData = response.data;
-        }
-      } catch (err) {
-        // Si no existe, crear un nuevo estudiante
-        if (err.response?.status === 404 || !err.response) {
-          try {
-            const createResponse = await studentService.create({
-              legajo: `STU-${Date.now()}`,
-              nombre: email.split('@')[0],
-              apellido: 'Usuario',
-              email: email,
-              pais: 'AR'
-            });
-            userData = {
-              _id: createResponse.data.id,
-              nombre: email.split('@')[0],
-              apellido: 'Usuario',
-              email: email,
-              legajo: `STU-${Date.now()}`,
-              rol: email.includes('admin') ? 'admin' : 'student'
-            };
-          } catch (createErr) {
-            console.error('Error creating student:', createErr);
-            setError('Error al crear usuario. Intenta nuevamente.');
-            return;
-          }
-        } else {
-          throw err;
-        }
-      }
-
-      if (!userData) {
-        setError('No se pudo obtener información del usuario.');
+      // 1. Verificación de contraseña manual
+      if (password !== '123456') {
+        setError('Contraseña incorrecta.');
+        setLoading(false);
         return;
       }
 
-      // Asegurar que tenga _id o id
+      // 2. Buscar estudiante por email en el backend
+      const response = await studentService.getByEmail(email);
+      const userData = response.data;
+
+      // Si el backend responde bien pero no hay datos
+      if (!userData) {
+        setError('Usuario no encontrado');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Preparar los datos del usuario para el frontend
       if (!userData._id && !userData.id) {
         userData._id = userData._id || userData.id || `temp-${Date.now()}`;
       }
 
-      // Agregar rol si no existe
       if (!userData.rol) {
         userData.rol = email.includes('admin') ? 'admin' : 'student';
       }
 
+      // 4. Iniciar sesión y redirigir
       const token = 'token-' + Date.now();
       onLogin(userData, token);
       navigate(userData.rol === 'admin' ? '/admin' : '/student');
+
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.error || 'Error de autenticación. Verifica tu email.');
+      
+      // 5. Mapear el error 404 del backend al mensaje que solicitaste
+      if (err.response?.status === 404) {
+        setError('Usuario no encontrado');
+      } else {
+        setError(err.response?.data?.error || 'Error de conexión con el servidor.');
+      }
     } finally {
       setLoading(false);
     }
