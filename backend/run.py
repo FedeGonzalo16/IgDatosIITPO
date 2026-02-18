@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
+from flasgger import Swagger
 from src.routes.student_routes import student_bp
 from src.routes.academic_routes import academic_bp
 from src.routes.grading_routes import grading_bp
@@ -27,6 +28,11 @@ app.register_blueprint(reports_bp, url_prefix='/api/v1/reportes')
 app.register_blueprint(professor_bp, url_prefix='/api/v1/profesores')
 app.register_blueprint(trajectory_bp, url_prefix='/api/v1/trayectoria')
 
+# Swagger / OpenAPI documentation - disponible en http://localhost:5000/apidocs
+from src.swagger_template import SWAGGER_TEMPLATE
+Swagger(app, template=SWAGGER_TEMPLATE)
+
 if __name__ == '__main__':
     print("Sistema EduGrade Iniciado en puerto 5000")
+    print("Documentación Swagger: http://localhost:5000/apidocs")
     app.run(host='0.0.0.0', port=5000, debug=True)
