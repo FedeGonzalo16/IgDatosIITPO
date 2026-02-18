@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
-import { studentService } from '../services/api';
+import { authService, studentService } from '../services/api';
 import './Auth.css';
 
 const Login = ({ onLogin }) => {
@@ -13,47 +13,49 @@ const Login = ({ onLogin }) => {
 
 const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    setError('');       // Limpiamos errores previos
+    setLoading(true);   // Activamos el botón de "Iniciando sesión..."
 
     try {
-      // 1. Verificación de contraseña manual
-      if (password !== '123456') {
-        setError('Contraseña incorrecta.');
-        setLoading(false);
+      // Llamar al endpoint de autenticación
+      const res = await authService.login(email, password);
+      const data = res.data || {};
+
+      // Soporta dos formas de respuesta: { token, user } o { access_token, user }
+      const token = data.token || data.access_token || data.accessToken;
+      const userData = data.user || data.usuario || data;
+
+      if (!token) {
+        // Si el endpoint no devuelve token, intentar buscar usuario por email
+        const r = await studentService.getByEmail(email);
+        const fallbackUser = r.data;
+        
+        if (!fallbackUser) {
+          setError('Usuario no encontrado');
+          setLoading(false);
+          return;
+        }
+        
+        const fallbackToken = 'token-' + Date.now();
+        onLogin(fallbackUser, fallbackToken);
+        navigate(fallbackUser.rol === 'admin' ? '/admin' : '/student');
         return;
       }
 
-      // 2. Buscar estudiante por email en el backend
-      const response = await studentService.getByEmail(email);
-      const userData = response.data;
-
-      // Si el backend responde bien pero no hay datos
-      if (!userData) {
-        setError('Usuario no encontrado');
-        setLoading(false);
-        return;
-      }
-
-      // 3. Preparar los datos del usuario para el frontend
-      if (!userData._id && !userData.id) {
-        userData._id = userData._id || userData.id || `temp-${Date.now()}`;
-      }
-
-      if (!userData.rol) {
-        userData.rol = email.includes('admin') ? 'admin' : 'student';
-      }
-
-      // 4. Iniciar sesión y redirigir
-      const token = 'token-' + Date.now();
+      // Guardar en localStorage y actualizar estado
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
       onLogin(userData, token);
-      navigate(userData.rol === 'admin' ? '/admin' : '/student');
+      navigate((userData.rol || (email.includes('admin') ? 'admin' : 'student')) === 'admin' ? '/admin' : '/student');
+
+      // SE ELIMINARON LAS LÍNEAS DUPLICADAS QUE CAUSABAN EL ERROR DE COMPILACIÓN AQUÍ
 
     } catch (err) {
       console.error('Login error:', err);
       
-      // 5. Mapear el error 404 del backend al mensaje que solicitaste
-      if (err.response?.status === 404) {
+      if (err.response?.status === 401) {
+        setError('Credenciales incorrectas');
+      } else if (err.response?.status === 404) {
         setError('Usuario no encontrado');
       } else {
         setError(err.response?.data?.error || 'Error de conexión con el servidor.');
