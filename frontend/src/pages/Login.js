@@ -13,51 +13,52 @@ const Login = ({ onLogin }) => {
 
 const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    setError('');       // Limpiamos errores previos
+    setLoading(true);   // Activamos el botón de "Iniciando sesión..."
 
     try {
-      // 1. Verificación de contraseña local (mock)
-      if (password !== '123456') {
-        setError('Contraseña incorrecta. (Usa: 123456)');
-        setLoading(false);
+      // Llamar al endpoint de autenticación
+      const res = await authService.login(email, password);
+      const data = res.data || {};
+
+      // Soporta dos formas de respuesta: { token, user } o { access_token, user }
+      const token = data.token || data.access_token || data.accessToken;
+      const userData = data.user || data.usuario || data;
+
+      if (!token) {
+        // Si el endpoint no devuelve token, intentar buscar usuario por email
+        const r = await studentService.getByEmail(email);
+        const fallbackUser = r.data;
+        
+        if (!fallbackUser) {
+          setError('Usuario no encontrado');
+          setLoading(false);
+          return;
+        }
+        
+        const fallbackToken = 'token-' + Date.now();
+        onLogin(fallbackUser, fallbackToken);
+        navigate(fallbackUser.rol === 'admin' ? '/admin' : '/student');
         return;
       }
 
-      // 2. Llamamos al endpoint que SÍ existe en tu backend
-      const response = await studentService.getByEmail(email);
-      const userData = response.data;
-
-      if (!userData) {
-        setError('Usuario no encontrado');
-        setLoading(false);
-        return;
-      }
-
-      // 3. Preparar los datos del usuario para el frontend
-      if (!userData._id && !userData.id) {
-        userData._id = userData._id || userData.id || `temp-${Date.now()}`;
-      }
-
-      if (!userData.rol) {
-        userData.rol = email.includes('admin') ? 'admin' : 'student';
-      }
-
-      // 4. Generar un token falso y guardar sesión
-      const token = 'token-' + Date.now();
+      // Guardar en localStorage y actualizar estado
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
-      
       onLogin(userData, token);
-      navigate(userData.rol === 'admin' ? '/admin' : '/student');
+      navigate((userData.rol || (email.includes('admin') ? 'admin' : 'student')) === 'admin' ? '/admin' : '/student');
+
+      // SE ELIMINARON LAS LÍNEAS DUPLICADAS QUE CAUSABAN EL ERROR DE COMPILACIÓN AQUÍ
 
     } catch (err) {
       console.error('Login error:', err);
       
-      if (err.response?.status === 404) {
-        setError('Usuario no encontrado en la base de datos');
+      if (err.response?.status === 401) {
+        setError('Credenciales incorrectas');
+      } else if (err.response?.status === 404) {
+        setError('Usuario no encontrado');
       } else {
-        setError('Error de conexión con el servidor.');
+        setError(err.response?.data?.error || 'Error de conexión con el servidor.');
       }
     } finally {
       setLoading(false);

@@ -19,7 +19,6 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
     email: user?.email || '',
     legajo: user?.legajo || ''
   });
-  const [institutionName, setInstitutionName] = useState(user?.institucion || '');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -77,27 +76,6 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    const fetchInstitutionName = async () => {
-      try {
-        const instsRes = await institutionService.getAll().catch(() => ({ data: [] }));
-        const insts = instsRes.data || [];
-        const instId = user?.institucion_id || user?.institucion;
-        if (!instId) {
-          setInstitutionName(user?.institucion || 'No asignada');
-          return;
-        }
-        const found = insts.find(i => String(i._id) === String(instId) || i.nombre === instId);
-        if (found) setInstitutionName(found.nombre);
-        else setInstitutionName(typeof instId === 'string' ? instId : (user?.institucion || 'No asignada'));
-      } catch (e) {
-        console.warn('Could not load institution name:', e);
-      }
-    };
-
-    fetchInstitutionName();
-  }, [user]);
 
   return (
     <div className="menu-content">
@@ -197,10 +175,6 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
               <div className="detail-row">
                 <span>Rol:</span>
                 <strong>{user?.rol || 'Estudiante'}</strong>
-              </div>
-              <div className="detail-row">
-                <span>Institución:</span>
-                <strong>{institutionName || user?.institucion || 'No asignada'}</strong>
               </div>
             </>
           )}
@@ -330,6 +304,7 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
           }
         } catch (e) {
           console.warn('Could not load user details:', e);
+          // Usar institución del user si está disponible
           if (userInstId) {
             setUserInstitution(userInstId);
           }
@@ -350,15 +325,21 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
       
       setEnrolledSubjects(enrolled);
       
-      // Filtrar materias disponibles
+      // Filtrar materias disponibles:
+      // 1. Que no esté cursando ni haya cursado
+      // 2. Que sean de la misma institución del usuario (si tiene institución)
       const materiasCursadasIds = enrolled.map(e => e.materia_id);
-      let filtered = allSubjects.filter(s => !materiasCursadasIds.includes(s._id));
+      let filtered = allSubjects.filter(s => 
+        !materiasCursadasIds.includes(s._id)
+      );
       
       // Si el usuario tiene institución, filtrar por institución (solo estudiantes, no admin)
       if (userInstitution && !isAdmin) {
         filtered = filtered.filter(s => {
           const subjInstId = s.institucion_id?._id || s.institucion_id;
-          return String(subjInstId) === String(userInstitution);
+          const userInstIdStr = String(userInstitution);
+          const subjInstIdStr = String(subjInstId);
+          return subjInstIdStr === userInstIdStr;
         });
       }
       
@@ -417,6 +398,7 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
   };
 
   const handleConfirm = async () => {
+    // Las inscripciones ya se hicieron individualmente
     setSuccessMessage('Inscripciones confirmadas');
     if (onEnroll) onEnroll();
     setTimeout(() => {
@@ -433,10 +415,11 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
         return;
       }
 
-      await subjectService.create(newSubject);
+      const response = await subjectService.create(newSubject);
       setSuccessMessage(`Materia ${newSubject.nombre} creada exitosamente`);
       setErrorMessage('');
       
+      // Resetear formulario
       setNewSubject({
         codigo: '',
         nombre: '',
@@ -445,6 +428,7 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
       });
       setShowCreateForm(false);
       
+      // Recargar materias
       await loadData();
       
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -594,7 +578,7 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
                 <p style={{ color: '#999', marginBottom: '15px' }}>
                   {userInstitution 
                     ? 'No hay materias disponibles de tu institución para inscribirse en este momento.'
-                    : 'No hay materias disponibles para inscribirse. Contacta a un administrador para asignarte una institución.'}
+                    : 'No hay materias disponibles para inscribirse en este momento. Contacta a un administrador para asignarte una institución.'}
                 </p>
                 {isAdmin && (
                   <button 
@@ -652,27 +636,19 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const studentId = user?._id || user?.id;
-      
       const [institutionsRes, userRes] = await Promise.all([
         institutionService.getAll(),
-        studentId ? studentService.getById(studentId) : Promise.resolve({ data: null })
+        user?._id || user?.id ? studentService.getById(user._id || user.id) : Promise.resolve({ data: null })
       ]);
 
-      const allInstitutions = institutionsRes.data || [];
-      setInstitutions(allInstitutions);
+      setInstitutions(institutionsRes.data || []);
       
-      let instId = null;
       if (userRes.data) {
-        instId = userRes.data.institucion_id || userRes.data.institucion;
-      }
-      if (!instId && user) {
-        instId = user.institucion_id || user.institucion;
-      }
-
-      if (instId) {
-        const inst = allInstitutions.find(i => String(i._id) === String(instId) || i.nombre === instId);
-        if (inst) setCurrentInstitution(inst);
+        const instId = userRes.data.institucion_id || userRes.data.institucion;
+        if (instId) {
+          const inst = institutionsRes.data.find(i => i._id === instId);
+          setCurrentInstitution(inst);
+        }
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -695,15 +671,13 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
         return;
       }
 
+      // Actualizar estudiante con nueva institución
       await studentService.update(studentId, {
         institucion_id: selectedInst._id
       });
 
-      const updatedUser = { 
-        ...user, 
-        institucion_id: selectedInst._id, 
-        institucion: selectedInst.nombre 
-      };
+      // Actualizar usuario en localStorage
+      const updatedUser = { ...user, institucion_id: selectedInst._id, institucion: selectedInst.nombre };
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
       setSuccessMessage(`Institución cambiada a ${selectedInst.nombre} exitosamente`);
@@ -758,7 +732,7 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
           <div className="inst-card current">
             <h4>{currentInstitution?.nombre || user?.institucion || 'No asignada'}</h4>
             <p>{currentInstitution?.codigo || ''}</p>
-            <p className="status">Estado: {currentInstitution ? 'Activo' : 'Pendiente'}</p>
+            <p className="status">Estado: Activo</p>
           </div>
         </div>
 
@@ -766,22 +740,17 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
           <h3>Instituciones Disponibles</h3>
           <div className="institutions-grid">
             {institutions.length > 0 ? (
-              institutions
-                .filter(inst => {
-                  const curr = currentInstitution?._id || user?.institucion_id || user?.institucion;
-                  return String(inst._id) !== String(curr) && inst.nombre !== curr;
-                })
-                .map(inst => (
-                  <div
-                    key={inst._id}
-                    className={`inst-card ${selectedInst?._id === inst._id ? 'selected' : ''}`}
-                    onClick={() => setSelectedInst(inst)}
-                  >
-                    <h4>{inst.nombre}</h4>
-                    <p>{inst.codigo}</p>
-                    <p>{inst.pais || 'N/A'}</p>
-                  </div>
-                ))
+              institutions.map(inst => (
+                <div
+                  key={inst._id}
+                  className={`inst-card ${selectedInst?._id === inst._id ? 'selected' : ''}`}
+                  onClick={() => setSelectedInst(inst)}
+                >
+                  <h4>{inst.nombre}</h4>
+                  <p>{inst.codigo}</p>
+                  <p>{inst.pais || 'N/A'}</p>
+                </div>
+              ))
             ) : (
               <p style={{ color: '#999', padding: '20px', textAlign: 'center' }}>
                 No hay instituciones disponibles
@@ -817,6 +786,7 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
   const [applying, setApplying] = useState(false);
   const [calificaciones, setCalificaciones] = useState([]);
 
+  // Cargar calificaciones del usuario desde MongoDB
   useEffect(() => {
     loadCalificaciones();
   }, [user]);
@@ -825,50 +795,49 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
     try {
       if (!user?._id && !user?.id) return;
       
-      const studentId = String(user._id || user.id);
-      const allGrades = await gradeService.getAll();
+      const studentId = user._id || user.id;
+      const response = await gradeService.getByStudent(studentId);
       
-      // Filtramos asegurando que exista la nota y los IDs coincidan exactamente
+      // Obtener calificaciones completas desde MongoDB
+      const allGrades = await gradeService.getAll();
       const userGrades = allGrades.data.filter(g => 
-        String(g.estudiante_id) === studentId && 
-        g.valor_original && 
-        g.valor_original.nota !== undefined && 
-        g.valor_original.nota !== null
+        g.estudiante_id === studentId && 
+        g.valor_original?.nota
       );
       
-      console.log("Calificaciones encontradas en Mongo:", userGrades);
       setCalificaciones(userGrades);
     } catch (error) {
       console.error('Error loading calificaciones:', error);
     }
   };
 
-  // Cruzamos la información del historial de Neo4j con la calificación real de Mongo
-  const grades = historial
-    .filter(h => (h.notas?.final !== null && h.notas?.final !== undefined) || (h.notas?.previo !== null && h.notas?.previo !== undefined))
-    .map(h => {
-      const notaAConvertir = (h.notas?.final !== null && h.notas?.final !== undefined) ? h.notas.final : h.notas?.previo;
-      const materiaIdNeo = String(h.materia_id);
-
-      // Buscamos en MongoDB la nota exacta que le corresponde
-      const calificacionMongo = calificaciones.find(c => {
-        const isSameMateria = String(c.materia_id) === materiaIdNeo;
-        const isFinal = ['FINAL', 'PREVIO', 'FINAL_PROJECT'].includes(c.valor_original?.tipo);
-        return isSameMateria && isFinal;
-      }) || calificaciones.find(c => String(c.materia_id) === materiaIdNeo); 
-
-      return {
-        calificacion_id: calificacionMongo ? calificacionMongo._id : null,
+  // Extraer notas del historial (Neo4j) y calificaciones (MongoDB)
+  const grades = [
+    ...historial
+      .filter(h => h.notas?.final)
+      .map(h => ({
+        calificacion_id: null,
         materia_id: h.materia_id,
-        materia: h.materia_nombre || 'Materia Desconocida',
-        nota: parseFloat(notaAConvertir),
+        materia: h.materia_nombre || 'Materia',
+        nota: parseFloat(h.notas.final),
         codigo: h.materia_codigo || '',
-        tipo: calificacionMongo?.valor_original?.tipo || 'FINAL'
-      };
-    })
-    .filter(g => !isNaN(g.nota) && g.nota > 0);
+        tipo: 'FINAL',
+        fuente: 'historial'
+      })),
+    ...calificaciones.map(c => ({
+      calificacion_id: c._id,
+      materia_id: c.materia_id,
+      materia: 'Materia', // Se puede enriquecer después
+      nota: parseFloat(c.valor_original?.nota) || 0,
+      codigo: '',
+      tipo: c.valor_original?.tipo || 'FINAL',
+      fuente: 'calificacion'
+    }))
+  ].filter(g => !isNaN(g.nota) && g.nota > 0);
 
   useEffect(() => {
+    // En una implementación real, cargaríamos las reglas desde el backend
+    // Por ahora usamos reglas predefinidas
     setConversionRules([
       { codigo_regla: 'AR_TO_US', nombre: 'Argentina a Estados Unidos', mapeo: [
         { nota_origen: 10, nota_destino: 'A' },
@@ -905,13 +874,8 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
   };
 
   const handleApplyConversion = async (grade) => {
-    if (!selectedRule) {
-      alert('Selecciona primero una regla de conversión.');
-      return;
-    }
-
-    if (!grade.calificacion_id) {
-      alert('No se encontró el registro en MongoDB. Crea el registro antes de aplicar la conversión.');
+    if (!selectedRule || !grade.calificacion_id) {
+      alert('Esta nota no puede ser convertida (no tiene ID de calificación en MongoDB)');
       return;
     }
     
@@ -924,37 +888,11 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
       
       alert(`Conversión aplicada para ${grade.materia}. La conversión ha sido guardada.`);
       
+      // Recargar calificaciones para ver la conversión aplicada
       await loadCalificaciones();
     } catch (error) {
       console.error('Error applying conversion:', error);
       alert('Error al aplicar conversión: ' + (error.response?.data?.error || error.message));
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  const handleCreateCalificacion = async (item) => {
-    try {
-      setApplying(true);
-      const studentId = String(user._id || user.id);
-      // Construir payload mínimo para crear la calificación en Mongo
-      const payload = {
-        estudiante_id: studentId,
-        materia_id: String(item.materia_id),
-        valor_original: {
-          tipo: item.tipo || 'FINAL',
-          nota: item.nota
-        }
-      };
-
-      await gradeService.create(payload);
-      // Recargar calificaciones y recalcular convertidas
-      await loadCalificaciones();
-      if (selectedRule) handleSelectRule(selectedRule);
-      alert(`Registro creado en Mongo para ${item.materia}. Ahora puedes aplicar la conversión.`);
-    } catch (error) {
-      console.error('Error creando calificación:', error);
-      alert('Error al crear calificación: ' + (error.response?.data?.error || error.message));
     } finally {
       setApplying(false);
     }
@@ -1040,24 +978,13 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
                         : item.convertida}
                     </td>
                     <td>
-                      {item.calificacion_id ? (
-                        <button 
-                          className="btn-apply"
-                          onClick={() => handleApplyConversion(item)}
-                          disabled={applying}
-                        >
-                          Aplicar
-                        </button>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <button className="btn-apply" disabled style={{ opacity: 0.6 }}>
-                            Aplicar
-                          </button>
-                          <button className="btn-create" onClick={() => handleCreateCalificacion(item)} disabled={applying}>
-                            Crear registro
-                          </button>
-                        </div>
-                      )}
+                      <button 
+                        className="btn-apply"
+                        onClick={() => handleApplyConversion(item)}
+                        disabled={applying}
+                      >
+                        Aplicar
+                      </button>
                     </td>
                   </tr>
                 ))}
