@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
-import { studentService } from '../services/api';
+import { authService, studentService } from '../services/api';
 import './Auth.css';
 
 const Login = ({ onLogin }) => {
@@ -13,67 +13,53 @@ const Login = ({ onLogin }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    setError('');       // Limpiamos errores previos
+    setLoading(true);   // Activamos el botón de "Iniciando sesión..."
 
     try {
-      // Buscar estudiante por email
-      let userData = null;
-      try {
-        const response = await studentService.getByEmail(email);
-        if (response.data) {
-          userData = response.data;
-        }
-      } catch (err) {
-        // Si no existe, crear un nuevo estudiante
-        if (err.response?.status === 404 || !err.response) {
-          try {
-            const createResponse = await studentService.create({
-              legajo: `STU-${Date.now()}`,
-              nombre: email.split('@')[0],
-              apellido: 'Usuario',
-              email: email,
-              pais: 'AR'
-            });
-            userData = {
-              _id: createResponse.data.id,
-              nombre: email.split('@')[0],
-              apellido: 'Usuario',
-              email: email,
-              legajo: `STU-${Date.now()}`,
-              rol: email.includes('admin') ? 'admin' : 'student'
-            };
-          } catch (createErr) {
-            console.error('Error creating student:', createErr);
-            setError('Error al crear usuario. Intenta nuevamente.');
-            return;
-          }
-        } else {
-          throw err;
-        }
-      }
+      // Llamar al endpoint de autenticación
+      const res = await authService.login(email, password);
+      const data = res.data || {};
 
-      if (!userData) {
-        setError('No se pudo obtener información del usuario.');
+      // Soporta dos formas de respuesta: { token, user } o { access_token, user }
+      const token = data.token || data.access_token || data.accessToken;
+      const userData = data.user || data.usuario || data;
+
+      if (!token) {
+        // Si el endpoint no devuelve token, intentar buscar usuario por email
+        const r = await studentService.getByEmail(email);
+        const fallbackUser = r.data;
+        
+        if (!fallbackUser) {
+          setError('Usuario no encontrado');
+          setLoading(false);
+          return;
+        }
+        
+        const fallbackToken = 'token-' + Date.now();
+        onLogin(fallbackUser, fallbackToken);
+        navigate(fallbackUser.rol === 'admin' ? '/admin' : '/student');
         return;
       }
 
-      // Asegurar que tenga _id o id
-      if (!userData._id && !userData.id) {
-        userData._id = userData._id || userData.id || `temp-${Date.now()}`;
-      }
-
-      // Agregar rol si no existe
-      if (!userData.rol) {
-        userData.rol = email.includes('admin') ? 'admin' : 'student';
-      }
-
-      const token = 'token-' + Date.now();
+      // Guardar en localStorage y actualizar estado
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
       onLogin(userData, token);
-      navigate(userData.rol === 'admin' ? '/admin' : '/student');
+      navigate((userData.rol || (email.includes('admin') ? 'admin' : 'student')) === 'admin' ? '/admin' : '/student');
+
+      // SE ELIMINARON LAS LÍNEAS DUPLICADAS QUE CAUSABAN EL ERROR DE COMPILACIÓN AQUÍ
+
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.response?.data?.error || 'Error de autenticación. Verifica tu email.');
+      
+      if (err.response?.status === 401) {
+        setError('Credenciales incorrectas');
+      } else if (err.response?.status === 404) {
+        setError('Usuario no encontrado');
+      } else {
+        setError(err.response?.data?.error || 'Error de conexión con el servidor.');
+      }
     } finally {
       setLoading(false);
     }
