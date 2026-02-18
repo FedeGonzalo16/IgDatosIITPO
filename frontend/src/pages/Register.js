@@ -4,7 +4,7 @@ import { User, Mail, Lock, AlertCircle } from 'lucide-react';
 import './Auth.css';
 import { authService, studentService } from '../services/api';
 
-const Register = () => {
+const Register = ({ onLogin }) => {
   const [formData, setFormData] = useState({
     nombre: '',
     apellido: '',
@@ -76,7 +76,7 @@ const Register = () => {
       if (token) {
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(userData));
-        onLogin(userData, token);
+        if (onLogin) onLogin(userData, token);
         navigate(userData.rol === 'admin' ? '/admin' : '/student');
       } else {
         alert('Registro exitoso. Por favor inicia sesión.');

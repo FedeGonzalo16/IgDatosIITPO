@@ -60,7 +60,7 @@ function App() {
         />
         <Route 
           path="/register" 
-          element={!user ? <Register /> : <Navigate to="/" />} 
+          element={!user ? <Register onLogin={handleLogin} /> : <Navigate to="/" />} 
         />
 
         {/* Rutas protegidas */}

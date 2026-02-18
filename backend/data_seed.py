@@ -136,9 +136,27 @@ def run_seed():
     print(f"   ✅ MIT creada (ID: {id_mit})")
 
     # ==========================================
-    # 2. CREAR MATERIAS (5)
+    # 2. CREAR USUARIO ADMINISTRADOR
     # ==========================================
-    log("2", "Creando Materias...")
+    log("2", "Creando Usuario Administrador...")
+    
+    admin_res = post("estudiantes/", {
+        "legajo": "ADMIN-001",
+        "nombre": "Administrador",
+        "apellido": "Sistema",
+        "email": "admin@example.com"
+    })
+    if admin_res:
+        id_admin = admin_res.get('id')
+        print(f"   ✅ Admin creado (ID: {id_admin})")
+        print("      📧 Email: admin@example.com | 🔑 Contraseña: 123456")
+    else:
+        print("   ⚠️ No se pudo crear el admin (verifica que el backend esté corriendo)")
+
+    # ==========================================
+    # 3. CREAR MATERIAS (5)
+    # ==========================================
+    log("3", "Creando Materias...")
     
     # Materias de UADE
     mat_bd = post("academic/materias", {
@@ -182,7 +200,7 @@ def run_seed():
     # ==========================================
     # 3. CREAR ESTUDIANTES (3)
     # ==========================================
-    log("3", "Creando Estudiantes...")
+    log("4", "Creando Estudiantes...")
 
     # Estudiante 1 (UADE - Va a recursar)
     est_fede = post("estudiantes/", {
@@ -233,9 +251,65 @@ def run_seed():
     print(f"   ✅ John creado (ID: {est_john}) - MIT")
 
     # ==========================================
-    # 4. CARGAR NOTAS Y CURSADAS
+    # 5. CREAR PROFESORES
     # ==========================================
-    log("4", "Simulando Cursadas y Exámenes...")
+    log("5", "Creando Profesores...")
+
+    prof_bd = post("profesores/", {
+        "legajo_docente": "PROF-101",
+        "nombre": "Carlos",
+        "apellido": "Mendoza",
+        "especialidad": "Bases de Datos"
+    })
+    prof_prog = post("profesores/", {
+        "legajo_docente": "PROF-102",
+        "nombre": "María",
+        "apellido": "Fernández",
+        "especialidad": "Programación"
+    })
+    prof_math = post("profesores/", {
+        "legajo_docente": "PROF-103",
+        "nombre": "Roberto",
+        "apellido": "Pérez",
+        "especialidad": "Matemática"
+    })
+    prof_ai = post("profesores/", {
+        "legajo_docente": "PROF-501",
+        "nombre": "David",
+        "apellido": "Wilson",
+        "especialidad": "Inteligencia Artificial"
+    })
+    prof_robotics = post("profesores/", {
+        "legajo_docente": "PROF-302",
+        "nombre": "Sarah",
+        "apellido": "Johnson",
+        "especialidad": "Robótica"
+    })
+
+    id_prof_bd = prof_bd.get('id') if prof_bd else None
+    id_prof_prog = prof_prog.get('id') if prof_prog else None
+    id_prof_math = prof_math.get('id') if prof_math else None
+    id_prof_ai = prof_ai.get('id') if prof_ai else None
+    id_prof_robotics = prof_robotics.get('id') if prof_robotics else None
+
+    # Asignar profesores a materias
+    if id_prof_bd:
+        post(f"profesores/{id_prof_bd}/asignar-materia", {"materia_id": mat_bd})
+    if id_prof_prog:
+        post(f"profesores/{id_prof_prog}/asignar-materia", {"materia_id": mat_prog})
+    if id_prof_math:
+        post(f"profesores/{id_prof_math}/asignar-materia", {"materia_id": mat_math})
+    if id_prof_ai:
+        post(f"profesores/{id_prof_ai}/asignar-materia", {"materia_id": mat_ai})
+    if id_prof_robotics:
+        post(f"profesores/{id_prof_robotics}/asignar-materia", {"materia_id": mat_robotics})
+
+    print("   ✅ 5 Profesores creados y asignados a sus materias.")
+
+    # ==========================================
+    # 6. CARGAR NOTAS Y CURSADAS
+    # ==========================================
+    log("6", "Simulando Cursadas y Exámenes...")
 
     # --- CASO A: Federico RECURSA Bases de Datos ---
     print("   👉 Federico cursa Bases de Datos (1er intento: REPRUEBA)")
@@ -327,8 +401,12 @@ def run_seed():
     sync_curso_relation(est_john, mat_robotics, "MIDTERM", "B+")
 
     print("\n✅ DATA SEED FINALIZADO EXITOSAMENTE.")
-    print("Ahora puedes verificar en:")
-    print("1. Mongo: Colecciones 'estudiantes', 'materias', 'calificaciones'.")
+    print("\n📋 CREDENCIALES PARA PROBAR:")
+    print("   👤 Admin:  admin@example.com  |  Contraseña: 123456")
+    print("   👤 Fede:   fede@mail.com      |  Contraseña: 123456")
+    print("   👤 Ana:    ana@mail.com       |  Contraseña: 123456")
+    print("\nAhora puedes verificar en:")
+    print("1. Mongo: Colecciones 'estudiantes', 'materias', 'profesores', 'calificaciones'.")
     print("2. Neo4j: Ejecuta 'MATCH (n) RETURN n' para ver el grafo conectado.")
     print("3. Cassandra: 'SELECT * FROM registro_auditoria;'")
 

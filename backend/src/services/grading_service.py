@@ -15,7 +15,7 @@ class GradingService:
                 // Usamos CREATE en lugar de MERGE para permitir recursadas múltiples
                 CREATE (e)-[r:CURSANDO {
                     anio: $anio,
-                    estado: 'EN_CURSO'
+                    estado: 'CURSANDO'
                 }]->(m)
             """, est_id=est_id, mat_id=mat_id, anio=anio_lectivo)
         return True

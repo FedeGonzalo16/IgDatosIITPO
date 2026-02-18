@@ -219,7 +219,7 @@ const AdminDashboard = ({ user, onLogout }) => {
               <td><strong>{student.legajo}</strong></td>
               <td>{student.nombre}</td>
               <td>{student.email}</td>
-              <td><span className={`status-badge ${student.estado.toLowerCase()}`}>{student.estado}</span></td>
+              <td><span className={`status-badge ${(student.estado || 'activo').toLowerCase()}`}>{student.estado || 'ACTIVO'}</span></td>
               <td>{student.institucion}</td>
               <td><strong>{student.promedio}</strong></td>
             </tr>
@@ -253,6 +253,24 @@ const AdminDashboard = ({ user, onLogout }) => {
       alert('Institución creada exitosamente');
     } catch (error) {
       alert('Error al crear institución: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  const handleCreateTeacher = async (e) => {
+    e.preventDefault();
+    try {
+      await teacherService.create({
+        legajo_docente: createFormData.legajo_docente,
+        nombre: createFormData.nombre,
+        apellido: createFormData.apellido,
+        especialidad: createFormData.especialidad || ''
+      });
+      setShowCreateModal(false);
+      setCreateFormData({});
+      loadData();
+      alert('Profesor creado exitosamente');
+    } catch (error) {
+      alert('Error al crear profesor: ' + (error.response?.data?.error || error.message));
     }
   };
 
@@ -523,8 +541,11 @@ const AdminDashboard = ({ user, onLogout }) => {
     <div className="table-container">
       <div className="table-header">
         <h3>Profesores</h3>
-        <button className="btn-add" onClick={() => {/* TODO: Abrir modal crear */}}>
-          <Plus size={16} /> Agregar
+        <button className="btn-add" onClick={() => {
+          setCreateFormData({ legajo_docente: '', nombre: '', apellido: '', especialidad: '' });
+          setShowCreateModal(true);
+        }}>
+          <Plus size={16} /> Agregar Profesor
         </button>
       </div>
       <table className="admin-table">
@@ -815,13 +836,17 @@ const AdminDashboard = ({ user, onLogout }) => {
                   <h2>
                     {activeTab === 'subjects' ? 'Crear Nueva Materia' : 
                      activeTab === 'institutions' ? 'Crear Nueva Institución' : 
-                     'Crear Nuevo'}
+                     activeTab === 'teachers' ? 'Crear Nuevo Profesor' : 'Crear Nuevo'}
                   </h2>
                   <button className="modal-close" onClick={() => setShowCreateModal(false)}>
                     <X size={24} />
                   </button>
                 </div>
-                <form onSubmit={activeTab === 'subjects' ? handleCreateSubject : handleCreateInstitution}>
+                <form onSubmit={
+                  activeTab === 'subjects' ? handleCreateSubject : 
+                  activeTab === 'institutions' ? handleCreateInstitution : 
+                  activeTab === 'teachers' ? handleCreateTeacher : (e) => e.preventDefault()
+                }>
                   {activeTab === 'subjects' && (
                     <>
                       <div className="form-group">
@@ -899,6 +924,49 @@ const AdminDashboard = ({ user, onLogout }) => {
                           value={createFormData.pais || 'AR'}
                           onChange={(e) => setCreateFormData({...createFormData, pais: e.target.value})}
                           placeholder="AR"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {activeTab === 'teachers' && (
+                    <>
+                      <div className="form-group">
+                        <label>Legajo Docente *</label>
+                        <input
+                          type="text"
+                          value={createFormData.legajo_docente || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, legajo_docente: e.target.value})}
+                          placeholder="Ej: PROF-001"
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Nombre *</label>
+                        <input
+                          type="text"
+                          value={createFormData.nombre || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, nombre: e.target.value})}
+                          placeholder="Ej: Carlos"
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Apellido *</label>
+                        <input
+                          type="text"
+                          value={createFormData.apellido || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, apellido: e.target.value})}
+                          placeholder="Ej: Mendoza"
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Especialidad</label>
+                        <input
+                          type="text"
+                          value={createFormData.especialidad || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, especialidad: e.target.value})}
+                          placeholder="Ej: Bases de Datos"
                         />
                       </div>
                     </>

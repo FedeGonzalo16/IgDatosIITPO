@@ -94,7 +94,7 @@ const StudentDashboard = ({ user, onLogout }) => {
       setHistorial(historialData);
 
       // Calcular estadísticas
-      const materiasEnCurso = historialData.filter(h => h.estado === 'EN_CURSO' || !h.fecha_cierre);
+      const materiasEnCurso = historialData.filter(h => h.estado === 'CURSANDO' || h.estado === 'EN_CURSO' || !h.fecha_cierre);
       const materiasAprobadas = historialData.filter(h => h.estado === 'APROBADO');
       const materiasReprobadas = historialData.filter(h => h.estado === 'REPROBADO');
       
@@ -168,7 +168,7 @@ const StudentDashboard = ({ user, onLogout }) => {
       return <ConvertGrades historial={historial} user={user} onBack={() => setActiveMenu('inicio')} />;
     }
 
-    const materiasEnCurso = historial.filter(h => h.estado === 'EN_CURSO' || !h.fecha_cierre);
+    const materiasEnCurso = historial.filter(h => h.estado === 'CURSANDO' || h.estado === 'EN_CURSO' || !h.fecha_cierre);
     const materiasAprobadas = historial.filter(h => h.estado === 'APROBADO');
     const materiasReprobadas = historial.filter(h => h.estado === 'REPROBADO');
 

@@ -11,7 +11,13 @@ const StudentProfile = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const handleDescargarAnalitico = async () => {
+    const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
+    await descargarCertificadoAnalitico(reportService, studentId, user, setReportLoading);
+  };
 
   const downloadReport = () => {
     const reportContent = `REPORTE ACADÉMICO - ${user?.nombre || 'Estudiante'}\nLegajo: ${user?.legajo || 'N/A'}\nFecha: ${new Date().toLocaleDateString('es-ES')}\n\n` +
@@ -176,7 +182,7 @@ const StudentProfile = ({ user, onLogout }) => {
                 const approvedCount = subjects.filter(s => normalize(s.estado).includes('APROB')).length;
                 const inProgressCount = subjects.filter(s => {
                   const ns = normalize(s.estado);
-                  return ns.includes('CURS') || ns.includes('EN_CURSO') || ns.includes('ENCURSO');
+                  return ns.includes('CURS') || ns.includes('EN_CURSO') || ns.includes('CURSANDO') || ns.includes('ENCURSO');
                 }).length;
                 const gradeNumbers = subjects.map(s => parseFloat(s.nota)).filter(n => !isNaN(n));
                 const average = gradeNumbers.length ? (gradeNumbers.reduce((a, b) => a + b, 0) / gradeNumbers.length) : null;
