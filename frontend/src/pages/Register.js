@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { User, Mail, Lock, AlertCircle } from 'lucide-react';
 import './Auth.css';
-import { authService, studentService } from '../services/api';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -45,46 +44,17 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // Preferir endpoint de autenticación si existe
-      const payload = {
-        nombre: formData.nombre,
-        apellido: formData.apellido,
-        email: formData.email,
-        password: formData.password,
-        legajo: formData.legajo,
-        documento: formData.documento,
-        fecha_nacimiento: formData.fecha_nacimiento
-      };
-
-      let res;
-      try {
-        res = await authService.register(payload);
-      } catch (e) {
-        // Fallback: si no hay endpoint de auth/register, crear estudiante y pedir login
-        await studentService.create(payload);
+      // Aquí iría la llamada a authService.register(formData)
+      // Por ahora simulamos el registro exitoso
+      
+      // Esperar un momento y redirigir al login
+      setTimeout(() => {
         alert('Registro exitoso. Por favor inicia sesión.');
         navigate('/login');
-        setLoading(false);
-        return;
-      }
-
-      // Si el register devuelve token y usuario, iniciar sesión automáticamente
-      const data = res.data || {};
-      const token = data.token || data.access_token || data.accessToken;
-      const userData = data.user || data.usuario || data;
-
-      if (token) {
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(userData));
-        onLogin(userData, token);
-        navigate(userData.rol === 'admin' ? '/admin' : '/student');
-      } else {
-        alert('Registro exitoso. Por favor inicia sesión.');
-        navigate('/login');
-      }
+      }, 1000);
     } catch (err) {
+      setError('Error al registrar. Intenta de nuevo.');
       console.error('Register error:', err);
-      setError(err.response?.data?.error || 'Error al registrar. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
