@@ -59,10 +59,6 @@ const Navbar = ({ user, onLogout }) => {
                 </>
               )}
 
-              <li className="nav-item user-info">
-                <span className="user-name">{user.nombre || user.email}</span>
-              </li>
-
               <li className="nav-item">
                 <button onClick={handleLogout} className="logout-btn">
                   <LogOut size={18} />

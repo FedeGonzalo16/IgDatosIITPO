@@ -307,6 +307,112 @@ def run_seed():
     print("   ✅ 5 Profesores creados y asignados a sus materias.")
 
     # ==========================================
+    # 5b. CREAR REGLAS DE CONVERSIÓN (UK, US, Alemania, Argentina)
+    # ==========================================
+    log("5b", "Creando Reglas de Conversión (12 combinaciones)...")
+
+    reglas_conversion = [
+        # --- ARGENTINA (1-10) ---
+        {"codigo_regla": "AR_TO_UK", "nombre": "Argentina → Reino Unido (GCSE/A-Level)", "mapeo": [
+            {"nota_origen": 10, "nota_destino": "A*"}, {"nota_origen": 9, "nota_destino": "A"},
+            {"nota_origen": 8, "nota_destino": "B"}, {"nota_origen": 7, "nota_destino": "C"},
+            {"nota_origen": 6, "nota_destino": "D"}, {"nota_origen": 5, "nota_destino": "E"},
+            {"nota_origen": 4, "nota_destino": "F"}, {"nota_origen": 3, "nota_destino": "F"}, {"nota_origen": 2, "nota_destino": "F"}, {"nota_origen": 1, "nota_destino": "F"},
+        ]},
+        {"codigo_regla": "AR_TO_US", "nombre": "Argentina → Estados Unidos (Letras)", "mapeo": [
+            {"nota_origen": 10, "nota_destino": "A"}, {"nota_origen": 9, "nota_destino": "A"},
+            {"nota_origen": 8, "nota_destino": "B"}, {"nota_origen": 7, "nota_destino": "C"},
+            {"nota_origen": 6, "nota_destino": "D"}, {"nota_origen": 5, "nota_destino": "F"},
+            {"nota_origen": 4, "nota_destino": "F"}, {"nota_origen": 3, "nota_destino": "F"}, {"nota_origen": 2, "nota_destino": "F"}, {"nota_origen": 1, "nota_destino": "F"},
+        ]},
+        {"codigo_regla": "AR_TO_US_GPA", "nombre": "Argentina → Estados Unidos (GPA 0-4)", "mapeo": [
+            {"nota_origen": 10, "nota_destino": 4.0}, {"nota_origen": 9, "nota_destino": 3.5},
+            {"nota_origen": 8, "nota_destino": 3.0}, {"nota_origen": 7, "nota_destino": 2.5},
+            {"nota_origen": 6, "nota_destino": 2.0}, {"nota_origen": 5, "nota_destino": 1.0},
+            {"nota_origen": 4, "nota_destino": 0.0}, {"nota_origen": 3, "nota_destino": 0.0}, {"nota_origen": 2, "nota_destino": 0.0}, {"nota_origen": 1, "nota_destino": 0.0},
+        ]},
+        {"codigo_regla": "AR_TO_DE", "nombre": "Argentina → Alemania (1.0-6.0)", "mapeo": [
+            {"nota_origen": 10, "nota_destino": 1.0}, {"nota_origen": 9, "nota_destino": 1.3},
+            {"nota_origen": 8, "nota_destino": 2.0}, {"nota_origen": 7, "nota_destino": 2.5},
+            {"nota_origen": 6, "nota_destino": 4.0}, {"nota_origen": 5, "nota_destino": 5.0},
+            {"nota_origen": 4, "nota_destino": 6.0}, {"nota_origen": 3, "nota_destino": 6.0}, {"nota_origen": 2, "nota_destino": 6.0}, {"nota_origen": 1, "nota_destino": 6.0},
+        ]},
+        # --- REINO UNIDO (A*-F) ---
+        {"codigo_regla": "UK_TO_AR", "nombre": "Reino Unido → Argentina", "mapeo": [
+            {"nota_origen": "A*", "nota_destino": 10}, {"nota_origen": "A", "nota_destino": 9},
+            {"nota_origen": "B", "nota_destino": 8}, {"nota_origen": "C", "nota_destino": 7},
+            {"nota_origen": "D", "nota_destino": 6}, {"nota_origen": "E", "nota_destino": 5},
+            {"nota_origen": "F", "nota_destino": 4},
+        ]},
+        {"codigo_regla": "UK_TO_US", "nombre": "Reino Unido → Estados Unidos", "mapeo": [
+            {"nota_origen": "A*", "nota_destino": "A"}, {"nota_origen": "A", "nota_destino": "A"},
+            {"nota_origen": "B", "nota_destino": "B"}, {"nota_origen": "C", "nota_destino": "C"},
+            {"nota_origen": "D", "nota_destino": "D"}, {"nota_origen": "E", "nota_destino": "F"}, {"nota_origen": "F", "nota_destino": "F"},
+        ]},
+        {"codigo_regla": "UK_TO_DE", "nombre": "Reino Unido → Alemania", "mapeo": [
+            {"nota_origen": "A*", "nota_destino": 1.0}, {"nota_origen": "A", "nota_destino": 1.3},
+            {"nota_origen": "B", "nota_destino": 2.0}, {"nota_origen": "C", "nota_destino": 2.5},
+            {"nota_origen": "D", "nota_destino": 4.0}, {"nota_origen": "E", "nota_destino": 5.0}, {"nota_origen": "F", "nota_destino": 6.0},
+        ]},
+        # --- ESTADOS UNIDOS (A-F, GPA) ---
+        {"codigo_regla": "US_GPA_TO_AR", "nombre": "Estados Unidos (GPA) → Argentina", "mapeo": [
+            {"nota_origen": 4.0, "nota_destino": 10}, {"nota_origen": 3.5, "nota_destino": 9},
+            {"nota_origen": 3.0, "nota_destino": 8}, {"nota_origen": 2.5, "nota_destino": 7},
+            {"nota_origen": 2.0, "nota_destino": 6}, {"nota_origen": 1.5, "nota_destino": 5},
+            {"nota_origen": 1.0, "nota_destino": 4}, {"nota_origen": 0.5, "nota_destino": 4}, {"nota_origen": 0.0, "nota_destino": 4},
+        ]},
+        {"codigo_regla": "US_TO_AR", "nombre": "Estados Unidos (Letras) → Argentina", "mapeo": [
+            {"nota_origen": "A", "nota_destino": 10}, {"nota_origen": "A+", "nota_destino": 10}, {"nota_origen": "A-", "nota_destino": 9},
+            {"nota_origen": "B", "nota_destino": 8}, {"nota_origen": "B+", "nota_destino": 8}, {"nota_origen": "B-", "nota_destino": 7},
+            {"nota_origen": "C", "nota_destino": 7}, {"nota_origen": "C+", "nota_destino": 6}, {"nota_origen": "C-", "nota_destino": 6},
+            {"nota_origen": "D", "nota_destino": 6}, {"nota_origen": "F", "nota_destino": 4},
+        ]},
+        {"codigo_regla": "US_TO_UK", "nombre": "Estados Unidos → Reino Unido", "mapeo": [
+            {"nota_origen": "A", "nota_destino": "A"}, {"nota_origen": "A+", "nota_destino": "A*"}, {"nota_origen": "A-", "nota_destino": "A"},
+            {"nota_origen": "B", "nota_destino": "B"}, {"nota_origen": "B+", "nota_destino": "B"}, {"nota_origen": "B-", "nota_destino": "B"},
+            {"nota_origen": "C", "nota_destino": "C"}, {"nota_origen": "C+", "nota_destino": "C"}, {"nota_origen": "C-", "nota_destino": "C"},
+            {"nota_origen": "D", "nota_destino": "D"}, {"nota_origen": "F", "nota_destino": "F"},
+        ]},
+        {"codigo_regla": "US_TO_DE", "nombre": "Estados Unidos → Alemania", "mapeo": [
+            {"nota_origen": "A", "nota_destino": 1.0}, {"nota_origen": "A+", "nota_destino": 1.0}, {"nota_origen": "A-", "nota_destino": 1.3},
+            {"nota_origen": "B", "nota_destino": 2.0}, {"nota_origen": "B+", "nota_destino": 1.7}, {"nota_origen": "B-", "nota_destino": 2.3},
+            {"nota_origen": "C", "nota_destino": 3.0}, {"nota_origen": "C+", "nota_destino": 2.5}, {"nota_origen": "C-", "nota_destino": 3.3},
+            {"nota_origen": "D", "nota_destino": 4.0}, {"nota_origen": "F", "nota_destino": 6.0},
+        ]},
+        # --- ALEMANIA (1.0-6.0, inversa) ---
+        {"codigo_regla": "DE_TO_AR", "nombre": "Alemania → Argentina", "mapeo": [
+            {"nota_origen": 1.0, "nota_destino": 10}, {"nota_origen": 1.3, "nota_destino": 9}, {"nota_origen": 1.7, "nota_destino": 9},
+            {"nota_origen": 2.0, "nota_destino": 8}, {"nota_origen": 2.3, "nota_destino": 8}, {"nota_origen": 2.7, "nota_destino": 7},
+            {"nota_origen": 3.0, "nota_destino": 7}, {"nota_origen": 3.3, "nota_destino": 7}, {"nota_origen": 3.7, "nota_destino": 6},
+            {"nota_origen": 4.0, "nota_destino": 6}, {"nota_origen": 4.3, "nota_destino": 5}, {"nota_origen": 4.7, "nota_destino": 5},
+            {"nota_origen": 5.0, "nota_destino": 4}, {"nota_origen": 5.3, "nota_destino": 4}, {"nota_origen": 5.7, "nota_destino": 4},
+            {"nota_origen": 6.0, "nota_destino": 4},
+        ]},
+        {"codigo_regla": "DE_TO_UK", "nombre": "Alemania → Reino Unido", "mapeo": [
+            {"nota_origen": 1.0, "nota_destino": "A*"}, {"nota_origen": 1.3, "nota_destino": "A"}, {"nota_origen": 1.7, "nota_destino": "A"},
+            {"nota_origen": 2.0, "nota_destino": "B"}, {"nota_origen": 2.3, "nota_destino": "B"}, {"nota_origen": 2.7, "nota_destino": "C"},
+            {"nota_origen": 3.0, "nota_destino": "C"}, {"nota_origen": 3.3, "nota_destino": "C"}, {"nota_origen": 3.7, "nota_destino": "D"},
+            {"nota_origen": 4.0, "nota_destino": "D"}, {"nota_origen": 4.3, "nota_destino": "E"}, {"nota_origen": 4.7, "nota_destino": "E"},
+            {"nota_origen": 5.0, "nota_destino": "F"}, {"nota_origen": 5.3, "nota_destino": "F"}, {"nota_origen": 5.7, "nota_destino": "F"},
+            {"nota_origen": 6.0, "nota_destino": "F"},
+        ]},
+        {"codigo_regla": "DE_TO_US", "nombre": "Alemania → Estados Unidos", "mapeo": [
+            {"nota_origen": 1.0, "nota_destino": "A"}, {"nota_origen": 1.3, "nota_destino": "A"}, {"nota_origen": 1.7, "nota_destino": "A"},
+            {"nota_origen": 2.0, "nota_destino": "B"}, {"nota_origen": 2.3, "nota_destino": "B"}, {"nota_origen": 2.7, "nota_destino": "C"},
+            {"nota_origen": 3.0, "nota_destino": "C"}, {"nota_origen": 3.3, "nota_destino": "C"}, {"nota_origen": 3.7, "nota_destino": "D"},
+            {"nota_origen": 4.0, "nota_destino": "D"}, {"nota_origen": 4.3, "nota_destino": "F"}, {"nota_origen": 4.7, "nota_destino": "F"},
+            {"nota_origen": 5.0, "nota_destino": "F"}, {"nota_origen": 5.3, "nota_destino": "F"}, {"nota_origen": 5.7, "nota_destino": "F"},
+            {"nota_origen": 6.0, "nota_destino": "F"},
+        ]},
+    ]
+    for regla in reglas_conversion:
+        res = post("calificaciones/reglas", regla)
+        if res:
+            print(f"   ✅ Regla: {regla['nombre']}")
+        else:
+            print(f"   ⚠️ No se pudo crear regla: {regla['nombre']}")
+
+    # ==========================================
     # 6. CARGAR NOTAS Y CURSADAS
     # ==========================================
     log("6", "Simulando Cursadas y Exámenes...")

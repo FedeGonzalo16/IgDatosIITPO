@@ -406,7 +406,14 @@
 
 .system-selector h3 {
   color: #333;
+  margin-bottom: 8px;
+}
+
+.conversion-legend {
+  color: #666;
+  font-size: 0.9rem;
   margin-bottom: 15px;
+  line-height: 1.4;
 }
 
 .system-buttons {

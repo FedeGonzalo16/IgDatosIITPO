@@ -844,13 +844,15 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
   };
 
   // Cruzamos la información del historial de Neo4j con la calificación real de Mongo
+  // Soporta notas numéricas (AR 1-10, DE 1-6, US GPA) y letras (UK A*-F, US A-F)
   const grades = historial
     .filter(h => (h.notas?.final !== null && h.notas?.final !== undefined) || (h.notas?.previo !== null && h.notas?.previo !== undefined))
     .map(h => {
       const notaAConvertir = (h.notas?.final !== null && h.notas?.final !== undefined) ? h.notas.final : h.notas?.previo;
       const materiaIdNeo = String(h.materia_id);
+      const numVal = parseFloat(notaAConvertir);
+      const notaVal = (typeof notaAConvertir === 'number' || !isNaN(numVal)) ? (numVal || notaAConvertir) : notaAConvertir;
 
-      // Buscamos en MongoDB la nota exacta que le corresponde
       const calificacionMongo = calificaciones.find(c => {
         const isSameMateria = String(c.materia_id) === materiaIdNeo;
         const isFinal = ['FINAL', 'PREVIO', 'FINAL_PROJECT'].includes(c.valor_original?.tipo);
@@ -861,41 +863,42 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
         calificacion_id: calificacionMongo ? calificacionMongo._id : null,
         materia_id: h.materia_id,
         materia: h.materia_nombre || 'Materia Desconocida',
-        nota: parseFloat(notaAConvertir),
+        nota: notaVal,
         codigo: h.materia_codigo || '',
         tipo: calificacionMongo?.valor_original?.tipo || 'FINAL'
       };
     })
-    .filter(g => !isNaN(g.nota) && g.nota > 0);
+    .filter(g => g.nota !== null && g.nota !== undefined && g.nota !== '');
 
   useEffect(() => {
-    setConversionRules([
-      { codigo_regla: 'AR_TO_US', nombre: 'Argentina a Estados Unidos', mapeo: [
-        { nota_origen: 10, nota_destino: 'A' },
-        { nota_origen: 9, nota_destino: 'A' },
-        { nota_origen: 8, nota_destino: 'B' },
-        { nota_origen: 7, nota_destino: 'C' },
-        { nota_origen: 6, nota_destino: 'D' },
-        { nota_origen: 4, nota_destino: 'F' }
-      ]},
-      { codigo_regla: 'AR_TO_4', nombre: 'Argentina a Escala 0-4', mapeo: [
-        { nota_origen: 10, nota_destino: 4.0 },
-        { nota_origen: 9, nota_destino: 3.5 },
-        { nota_origen: 8, nota_destino: 3.0 },
-        { nota_origen: 7, nota_destino: 2.5 },
-        { nota_origen: 6, nota_destino: 2.0 },
-        { nota_origen: 4, nota_destino: 1.0 }
-      ]}
-    ]);
-    setLoading(false);
+    const loadRules = async () => {
+      try {
+        const res = await conversionService.getAllRules();
+        const rules = res.data || [];
+        setConversionRules(rules);
+      } catch (error) {
+        console.error('Error cargando reglas de conversión:', error);
+        setConversionRules([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadRules();
   }, []);
 
   const handleSelectRule = (rule) => {
     setSelectedRule(rule);
     const convertedGrades = grades.map(grade => {
-      const mapping = rule.mapeo.find(m => 
-        Math.abs(parseFloat(m.nota_origen) - grade.nota) < 0.5
-      );
+      const mapping = rule.mapeo.find(m => {
+        const orig = m.nota_origen;
+        const gradeVal = grade.nota;
+        if (typeof orig === 'number' && (typeof gradeVal === 'number' || !isNaN(parseFloat(gradeVal)))) {
+          return Math.abs(orig - parseFloat(gradeVal)) < 0.05;
+        }
+        const origStr = String(orig).toUpperCase().trim();
+        const valStr = String(gradeVal).toUpperCase().trim();
+        return origStr === valStr;
+      });
       return {
         ...grade,
         convertida: mapping ? mapping.nota_destino : 'N/A'
@@ -1002,6 +1005,9 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
       <div className="conversion-container">
         <div className="system-selector">
           <h3>Selecciona una Regla de Conversión</h3>
+          <p className="conversion-legend">
+            Sistemas: Argentina (1-10) · Reino Unido (A*-F) · Estados Unidos (A-F, GPA 0-4) · Alemania (1.0-6.0)
+          </p>
           <div className="system-buttons">
             {conversionRules.map((rule) => (
               <button
@@ -1036,7 +1042,7 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
                     <td className="original">{item.nota}</td>
                     <td className="converted">
                       {typeof item.convertida === 'number'
-                        ? item.convertida.toFixed(2)
+                        ? (Number.isInteger(item.convertida) ? item.convertida : item.convertida.toFixed(2))
                         : item.convertida}
                     </td>
                     <td>

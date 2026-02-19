@@ -5,6 +5,21 @@ from datetime import datetime
 
 class ConversionService:
     @staticmethod
+    def _buscar_equivalencia(mapeo, nota_orig, nota_orig_str):
+        """Busca equivalencia en mapeo"""
+        for m in mapeo:
+            orig = m.get('nota_origen')
+            orig_str = str(orig)
+            if orig_str == nota_orig_str:
+                return m['nota_destino']
+            if isinstance(orig, (int, float)) and isinstance(nota_orig, (int, float)):
+                if abs(float(orig) - float(nota_orig)) < 0.01:
+                    return m['nota_destino']
+            if isinstance(orig, str) and isinstance(nota_orig, str) and orig.upper() == nota_orig.upper():
+                return m['nota_destino']
+        return None
+
+    @staticmethod
     def create_rule(data):
         db = get_mongo()
         redis = get_redis()
@@ -55,16 +70,13 @@ class ConversionService:
         
         # 2. Obtener Calificación
         calif = db.calificaciones.find_one({"_id": ObjectId(data['calificacion_id'])})
-        nota_orig = str(calif['valor_original']['nota'])
+        nota_orig = calif['valor_original']['nota']
+        nota_orig_str = str(nota_orig)
         
-        # 3. Calcular (Lógica simple de mapeo)
-        valor_conv = None
-        for m in rule.get('mapeo', []):
-            if str(m['nota_origen']) == nota_orig:
-                valor_conv = m['nota_destino']
-                break
+        # 3. Calcular (mapeo con soporte para letras y números)
+        valor_conv = ConversionService._buscar_equivalencia(rule.get('mapeo', []), nota_orig, nota_orig_str)
         
-        if not valor_conv:
+        if valor_conv is None:
             raise Exception("No hay equivalencia en la regla")
         
         # 4. Actualizar Mongo (Append only en array)
