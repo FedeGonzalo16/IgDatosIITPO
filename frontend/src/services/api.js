@@ -74,6 +74,10 @@ export const studentService = {
 
   getByEmail: (email) =>
     apiClient.get(`/estudiantes/email/${encodeURIComponent(email)}`)
+
+  ,
+  cambiarInstitucion: (id, nueva_institucion_id, regla_conversion_codigo) =>
+    apiClient.post(`/estudiantes/${id}/cambiar-institucion`, { nueva_institucion_id, regla_conversion_codigo })
 };
 
 // ==========================================

@@ -87,17 +87,17 @@ def sync_curso_relation(est_id, mat_id, tipo, nota):
 
             # Si es FINAL -> convertir/crear relación CURSÓ (reemplaza CURSANDO)
             if tipo == 'FINAL':
-                # eliminar posible relación CURSANDO previa
-                session.run(
-                    "MATCH (e:Estudiante {id_mongo: $eid})-[r:CURSANDO]->(m:Materia {id_mongo: $mid}) DELETE r",
-                    eid=est_id, mid=mat_id
-                )
-                # crear CURSÓ con propiedades finales
-                session.run(
-                    "MATCH (e:Estudiante {id_mongo: $eid}), (m:Materia {id_mongo: $mid}) "
-                    "CREATE (e)-[r:CURSÓ {estado: 'FINALIZADO', tipo: $tipo, nota: $nota, final: $nota, fecha_cierre: $fecha_cierre}]->(m)",
-                    eid=est_id, mid=mat_id, tipo=tipo, nota=nota, fecha_cierre=datetime.utcnow().isoformat()
-                )
+                session.run("""
+                    MATCH (e:Estudiante {id_mongo: $eid})-[r:CURSANDO]->(m:Materia {id_mongo: $mid})
+                    CREATE (e)-[r2:CURSÓ]->(m)
+                    SET r2 = properties(r), 
+                        r2.estado = 'FINALIZADO', 
+                        r2.tipo = $tipo, 
+                        r2.nota = $nota, 
+                        r2.final = $nota, 
+                        r2.fecha_cierre = $fecha_cierre
+                    DELETE r
+                """, eid=est_id, mid=mat_id, tipo=tipo, nota=nota, fecha_cierre=datetime.utcnow().isoformat())
             else:
                 # Para parciales, midterms, projects intermedios: marcar CURSANDO (upsert)
                 session.run(

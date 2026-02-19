@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { ArrowLeft, Download, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { reportService } from '../services/api';
+import { reportService, institutionService, studentService } from '../services/api';
 import { descargarCertificadoAnalitico } from '../utils/certificadoAnalitico';
 import './StudentProfile.css';
 import { gradeService } from '../services/api';
@@ -13,6 +13,10 @@ const StudentProfile = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
+  const [institutions, setInstitutions] = useState([]);
+  const [selectedInstitution, setSelectedInstitution] = useState('');
+  const [conversionRule, setConversionRule] = useState('DEFAULT');
+  const [localUser, setLocalUser] = useState(user || {});
 
   const handleDescargarAnalitico = async () => {
     const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
@@ -34,6 +38,20 @@ const StudentProfile = ({ user, onLogout }) => {
   };
 
   useEffect(() => {
+    // Sincronizar prop `user` con copy local
+    setLocalUser(user || {});
+
+    // Cargar lista de instituciones para el selector
+    const loadInstitutions = async () => {
+      try {
+        const res = await institutionService.getAll();
+        setInstitutions(res.data || []);
+      } catch (e) {
+        console.warn('No se pudieron cargar instituciones:', e);
+      }
+    };
+    loadInstitutions();
+
     const loadData = async () => {
       if (!user) return;
       setLoading(true);
@@ -79,6 +97,8 @@ const StudentProfile = ({ user, onLogout }) => {
         });
 
         setSubjects(mapped);
+        // Set selectedInstitution to current if existe
+        setSelectedInstitution(user?.institucion_id || user?.institucion || '');
         
       } catch (err) {
         console.error('Error cargando datos del estudiante:', err);
@@ -89,6 +109,21 @@ const StudentProfile = ({ user, onLogout }) => {
     };
     loadData();
   }, [user]);
+
+  const handleChangeInstitution = async () => {
+    const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
+    if (!selectedInstitution) return alert('Seleccione una institución destino.');
+    try {
+      await studentService.cambiarInstitucion(studentId, selectedInstitution, conversionRule);
+      // Refrescar datos del estudiante y reflejar en UI
+      const res = await studentService.getById(studentId);
+      setLocalUser(res.data || {});
+      alert('Institución cambiada correctamente');
+    } catch (err) {
+      console.error('Error al cambiar institución:', err);
+      alert('Error al cambiar institución: ' + (err.response?.data?.error || err.message));
+    }
+  };
 
   return (
     <>
@@ -110,6 +145,21 @@ const StudentProfile = ({ user, onLogout }) => {
                 <h1>{user?.nombre || 'Estudiante'}</h1>
                 <p>Legajo: {user?.legajo || 'Sin Legajo'}</p>
                 <p>Email: {user?.email}</p>
+                <div className="institution-section">
+                  <p><strong>Institución actual:</strong> {localUser?.institucion_nombre || 'Sin Institución'}</p>
+
+                  <div className="change-institution-form">
+                    <select value={selectedInstitution} onChange={e => setSelectedInstitution(e.target.value)}>
+                      <option value="">-- Seleccione institución destino --</option>
+                      {institutions.map(inst => (
+                        <option key={inst._id || inst.id} value={inst._id || inst.id}>{inst.nombre || inst.nombre}</option>
+                      ))}
+                    </select>
+
+                    <input type="text" value={conversionRule} onChange={e => setConversionRule(e.target.value)} placeholder="Código de regla de conversión" />
+                    <button className="btn-primary" onClick={handleChangeInstitution}>Cambiar Institución</button>
+                  </div>
+                </div>
               </div>
             </div>
             <button className="btn-download" onClick={handleDescargarAnalitico} disabled={reportLoading}>

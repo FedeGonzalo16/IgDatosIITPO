@@ -50,3 +50,27 @@ def get_by_email(email):
     if not student:
         return jsonify({"error": "Estudiante no encontrado"}), 404
     return jsonify(student)
+
+
+@student_bp.route('/<id>/cambiar-institucion', methods=['POST'])
+def cambiar_institucion(id):
+    """
+    Endpoint para cambiar de institución y homologar materias.
+    Body esperado:
+    {
+        "nueva_institucion_id": "60d5ec49c...",
+        "regla_conversion_codigo": "AR_TO_US"
+    }
+    """
+    data = request.json
+    nueva_institucion_id = data.get('nueva_institucion_id')
+    regla_conversion_codigo = data.get('regla_conversion_codigo')
+    
+    if not nueva_institucion_id or not regla_conversion_codigo:
+        return jsonify({"error": "Faltan parámetros 'nueva_institucion_id' o 'regla_conversion_codigo'"}), 400
+        
+    try:
+        resultado = StudentService.cambiar_institucion(id, nueva_institucion_id, regla_conversion_codigo)
+        return jsonify(resultado), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
