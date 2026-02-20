@@ -632,6 +632,24 @@
   background-color: #fef2f2;
 }
 
+.equivalencia-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  margin-left: 6px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.trajectory-item .equivalencia-metodo,
+.trajectory-item .equivalencia-fecha {
+  font-size: 0.75rem;
+  color: #555;
+  margin-left: 4px;
+}
+
 .trajectory-block {
   margin-bottom: 20px;
 }
@@ -657,6 +675,120 @@
   color: #888;
   font-size: 0.95rem;
   margin: 10px 0;
+}
+
+/* Cambiar Institución en Perfil */
+.change-institution-section p { margin-bottom: 12px; }
+.change-institution-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.change-institution-inline select {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  min-width: 180px;
+}
+.btn-confirm-small {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+.btn-download-analitico {
+  padding: 8px 16px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-download-analitico:hover:not(:disabled) { background: #059669; }
+.btn-download-analitico:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-download-analitico {
+  padding: 8px 16px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-download-analitico:hover:not(:disabled) { background: #059669; }
+.btn-download-analitico:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+.btn-confirm-small:hover:not(:disabled) { opacity: 0.9; }
+.btn-confirm-small:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Historial detallado en perfil */
+.historial-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.subject-detail-card-mini {
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+}
+.subject-detail-header-mini {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.subject-detail-header-mini h4 { margin: 0 0 4px 0; font-size: 1rem; }
+.code-label { font-size: 0.85rem; color: #666; margin: 0; }
+.subject-meta-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.status-badge.aprobado { background: #d1fae5; color: #065f46; }
+.status-badge.reprobado { background: #fee2e2; color: #991b1b; }
+.status-badge.cursando { background: #dbeafe; color: #1e40af; }
+.status-badge.equivalencia { background: #e0e7ff; color: #3730a3; }
+.grade-badge-mini {
+  padding: 4px 8px;
+  background: #667eea;
+  color: white;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.orig-badge {
+  font-size: 0.75rem;
+  color: #666;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.componentes-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: #555;
 }
 
 .subject-card.reprobada {

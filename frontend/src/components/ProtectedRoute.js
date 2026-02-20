@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 
-const ProtectedRoute = ({ children, user, role, onLogout }) => {
+const ProtectedRoute = ({ children, user, role, onLogout, onUserUpdate }) => {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -23,8 +23,8 @@ const ProtectedRoute = ({ children, user, role, onLogout }) => {
     );
   }
 
-  // Pasar props user y onLogout al componente hijo
-  return React.cloneElement(children, { user, onLogout });
+  // Pasar props user, onLogout y onUserUpdate al componente hijo
+  return React.cloneElement(children, { user, onLogout, onUserUpdate });
 };
 
 export default ProtectedRoute;

@@ -38,23 +38,33 @@ def get_student_trajectory(est_id):
                 }
             })
         
-        # Materias aprobadas/reprobadas
+        # Materias aprobadas/reprobadas (incluye APROBADO y APROBADO (EQUIVALENCIA))
         result_historico = session.run("""
             MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(m:Materia)
             RETURN m.id_mongo as materia_id, m.nombre as nombre, m.codigo as codigo,
                    r.estado as estado, r.anio as anio, r.fecha_cierre as fecha_cierre,
                    r.primer_parcial as p1, r.segundo_parcial as p2,
-                   r.final as final, r.previo as previo
+                   r.final as final, r.previo as previo,
+                   r.nota_original as nota_original, r.metodo_conversion as metodo_conversion,
+                   r.materia_origen_nombre as materia_origen_nombre,
+                   r.fecha_conversion as fecha_conversion
             ORDER BY r.fecha_cierre DESC
         """, est_id=est_id)
         
         for record in result_historico:
+            nota_final = record["final"] if record["final"] is not None else record["previo"]
             materia_data = {
                 "materia_id": record["materia_id"],
                 "nombre": record["nombre"],
                 "codigo": record["codigo"],
                 "anio": record["anio"],
                 "fecha_cierre": str(record["fecha_cierre"]) if record["fecha_cierre"] else None,
+                "nota_final": nota_final,
+                "es_equivalencia": record["estado"] == "APROBADO (EQUIVALENCIA)" if record["estado"] else False,
+                "nota_original": record["nota_original"],
+                "metodo_conversion": record["metodo_conversion"],
+                "materia_origen_nombre": record["materia_origen_nombre"],
+                "fecha_conversion": str(record["fecha_conversion"]) if record["fecha_conversion"] else None,
                 "notas": {
                     "primer_parcial": record["p1"],
                     "segundo_parcial": record["p2"],
@@ -63,7 +73,8 @@ def get_student_trajectory(est_id):
                 }
             }
             
-            if record["estado"] == "APROBADO":
+            estado = record["estado"] or ""
+            if estado == "APROBADO" or estado == "APROBADO (EQUIVALENCIA)":
                 trayectoria["materias_aprobadas"].append(materia_data)
             else:
                 trayectoria["materias_reprobadas"].append(materia_data)

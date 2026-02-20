@@ -7,7 +7,6 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
-import StudentProfile from './pages/StudentProfile';
 import ReportesPage from './pages/ReportesPage';
 
 // Componentes
@@ -67,18 +66,14 @@ function App() {
         <Route
           path="/student"
           element={
-            <ProtectedRoute user={user} onLogout={handleLogout}>
+            <ProtectedRoute user={user} onLogout={handleLogout} onUserUpdate={(u) => setUser(u)}>
               <StudentDashboard />
             </ProtectedRoute>
           }
         />
         <Route
           path="/student/subjects"
-          element={
-            <ProtectedRoute user={user} onLogout={handleLogout}>
-              <StudentProfile />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/student" state={{ openMenu: 'perfil' }} replace />}
         />
         <Route
           path="/admin"

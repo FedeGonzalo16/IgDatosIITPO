@@ -109,6 +109,17 @@
   gap: 20px;
 }
 
+.equivalencia-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  margin-left: 8px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
 .subject-card {
   background: white;
   border-radius: 12px;

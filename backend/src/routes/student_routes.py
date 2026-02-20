@@ -62,12 +62,12 @@ def cambiar_institucion(id):
         "regla_conversion_codigo": "AR_TO_US"
     }
     """
-    data = request.json
+    data = request.json or {}
     nueva_institucion_id = data.get('nueva_institucion_id')
-    regla_conversion_codigo = data.get('regla_conversion_codigo')
+    regla_conversion_codigo = data.get('regla_conversion_codigo') or 'AR_TO_US'
     
-    if not nueva_institucion_id or not regla_conversion_codigo:
-        return jsonify({"error": "Faltan parámetros 'nueva_institucion_id' o 'regla_conversion_codigo'"}), 400
+    if not nueva_institucion_id:
+        return jsonify({"error": "Falta el parámetro 'nueva_institucion_id'"}), 400
         
     try:
         resultado = StudentService.cambiar_institucion(id, nueva_institucion_id, regla_conversion_codigo)

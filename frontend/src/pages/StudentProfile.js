@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import { ArrowLeft, Download, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { reportService, institutionService, studentService } from '../services/api';
+import { reportService } from '../services/api';
 import { descargarCertificadoAnalitico } from '../utils/certificadoAnalitico';
 import './StudentProfile.css';
 import { gradeService } from '../services/api';
@@ -10,13 +10,17 @@ import { gradeService } from '../services/api';
 const StudentProfile = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [subjects, setSubjects] = useState([]);
+  const [institutions, setInstitutions] = useState([]);
+  const [selectedInstitution, setSelectedInstitution] = useState('');
+  const [conversionRule, setConversionRule] = useState('AR_TO_US');
+  const [localUser, setLocalUser] = useState(user || {});
+  const [institutions, setInstitutions] = useState([]);
+  const [selectedInstitution, setSelectedInstitution] = useState('');
+  const [conversionRule, setConversionRule] = useState('AR_TO_US');
+  const [localUser, setLocalUser] = useState(user || {});
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
-  const [institutions, setInstitutions] = useState([]);
-  const [selectedInstitution, setSelectedInstitution] = useState('');
-  const [conversionRule, setConversionRule] = useState('DEFAULT');
-  const [localUser, setLocalUser] = useState(user || {});
 
   const handleDescargarAnalitico = async () => {
     const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
@@ -31,13 +35,6 @@ const StudentProfile = ({ user, onLogout }) => {
     const element = document.createElement('a');
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportContent));
     element.setAttribute('download', `reporte_academico_${user?.legajo || 'estudiante'}.txt`);
-    element.style.display = 'none';
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
-
-  useEffect(() => {
     // Sincronizar prop `user` con copy local
     setLocalUser(user || {});
 
@@ -52,6 +49,27 @@ const StudentProfile = ({ user, onLogout }) => {
     };
     loadInstitutions();
 
+    element.style.display = 'none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    // Sincronizar prop `user` con copy local
+    setLocalUser(user || {});
+
+    // Cargar lista de instituciones para el selector
+    const loadInstitutions = async () => {
+      try {
+        const res = await institutionService.getAll();
+        setInstitutions(res.data || []);
+      } catch (e) {
+        console.warn('No se pudieron cargar instituciones:', e);
+      }
+    };
+    loadInstitutions();
+
+  };
+
+  useEffect(() => {
     const loadData = async () => {
       if (!user) return;
       setLoading(true);
@@ -75,12 +93,15 @@ const StudentProfile = ({ user, onLogout }) => {
             if (s.notas.previo !== null) comps.push({ tipo: 'Previo', valor: s.notas.previo });
           }
 
-          // Determinar la nota final a mostrar
+          // Determinar la nota final a mostrar (incluye equivalencias)
           let notaFinal = null;
-          if (s.notas?.final !== null) notaFinal = s.notas.final;
-          else if (s.notas?.previo !== null) notaFinal = s.notas.previo;
-          else if (s.estado === 'APROBADO' || s.estado === 'REPROBADO') notaFinal = s.notas?.final || s.notas?.previo;
+          if (s.notas?.final !== null && s.notas?.final !== undefined) notaFinal = s.notas.final;
+          else if (s.notas?.previo !== null && s.notas?.previo !== undefined) notaFinal = s.notas.previo;
+          else if ((s.estado && s.estado.toString().startsWith('APROBADO')) || s.estado === 'REPROBADO') notaFinal = s.notas?.final || s.notas?.previo;
 
+        // Set selectedInstitution to current if existe
+        setSelectedInstitution(user?.institucion_id || user?.institucion || '');
+        
           return {
             materia_id: s.materia_id,
             id: idx,
@@ -88,18 +109,45 @@ const StudentProfile = ({ user, onLogout }) => {
             nombre: s.materia_nombre || 'Materia Desconocida',
             estado: s.estado || 'CURSANDO',
             nota: notaFinal,
+            es_equivalencia: s.es_equivalencia || (s.estado && s.estado.toString().includes('EQUIVALENCIA')),
+            nota_original: s.nota_original,
+            materia_origen_nombre: s.materia_origen_nombre,
+  const handleChangeInstitution = async () => {
+    const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
+    if (!selectedInstitution) return alert('Seleccione una institución destino.');
+    try {
+      const result = await studentService.cambiarInstitucion(studentId, selectedInstitution, conversionRule);
+      const res = await studentService.getById(studentId);
+      const updatedUser = { ...user, ...res.data, institucion_id: selectedInstitution };
+      const inst = (institutions || []).find(i => String(i._id) === String(selectedInstitution));
+      if (inst) updatedUser.institucion = inst.nombre;
+      setLocalUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      if (onUserUpdate) onUserUpdate(updatedUser);
+      const homologadas = result.data?.total_homologadas ?? result.data?.materias_homologadas?.length ?? 0;
+      alert(homologadas > 0
+        ? `Institución cambiada. ${homologadas} materia(s) aprobada(s) por equivalencia.`
+        : 'Institución cambiada correctamente');
+    } catch (err) {
+      console.error('Error al cambiar institución:', err);
+      alert('Error al cambiar institución: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+            metodo_conversion: s.metodo_conversion,
+            fecha_conversion: s.fecha_conversion,
             componentes: comps,
             profesor: 'Sin asignar',
             horas_semanales: 4,
             anio: s.anio || "Sin fecha",
             fecha_cierre: s.fecha_cierre || null 
           };
-        });
-
-        setSubjects(mapped);
         // Set selectedInstitution to current if existe
         setSelectedInstitution(user?.institucion_id || user?.institucion || '');
         
+        });
+
+        setSubjects(mapped);
       } catch (err) {
         console.error('Error cargando datos del estudiante:', err);
         setError('No se pudieron cargar los datos académicos.');
@@ -107,23 +155,30 @@ const StudentProfile = ({ user, onLogout }) => {
         setLoading(false);
       }
     };
-    loadData();
-  }, [user]);
-
   const handleChangeInstitution = async () => {
     const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
     if (!selectedInstitution) return alert('Seleccione una institución destino.');
     try {
-      await studentService.cambiarInstitucion(studentId, selectedInstitution, conversionRule);
-      // Refrescar datos del estudiante y reflejar en UI
+      const result = await studentService.cambiarInstitucion(studentId, selectedInstitution, conversionRule);
       const res = await studentService.getById(studentId);
-      setLocalUser(res.data || {});
-      alert('Institución cambiada correctamente');
+      const updatedUser = { ...user, ...res.data, institucion_id: selectedInstitution };
+      const inst = (institutions || []).find(i => String(i._id) === String(selectedInstitution));
+      if (inst) updatedUser.institucion = inst.nombre;
+      setLocalUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      if (onUserUpdate) onUserUpdate(updatedUser);
+      const homologadas = result.data?.total_homologadas ?? result.data?.materias_homologadas?.length ?? 0;
+      alert(homologadas > 0
+        ? `Institución cambiada. ${homologadas} materia(s) aprobada(s) por equivalencia.`
+        : 'Institución cambiada correctamente');
     } catch (err) {
       console.error('Error al cambiar institución:', err);
       alert('Error al cambiar institución: ' + (err.response?.data?.error || err.message));
     }
   };
+
+    loadData();
+  }, [user]);
 
   return (
     <>
@@ -145,21 +200,7 @@ const StudentProfile = ({ user, onLogout }) => {
                 <h1>{user?.nombre || 'Estudiante'}</h1>
                 <p>Legajo: {user?.legajo || 'Sin Legajo'}</p>
                 <p>Email: {user?.email}</p>
-                <div className="institution-section">
-                  <p><strong>Institución actual:</strong> {localUser?.institucion_nombre || 'Sin Institución'}</p>
-
-                  <div className="change-institution-form">
-                    <select value={selectedInstitution} onChange={e => setSelectedInstitution(e.target.value)}>
-                      <option value="">-- Seleccione institución destino --</option>
-                      {institutions.map(inst => (
-                        <option key={inst._id || inst.id} value={inst._id || inst.id}>{inst.nombre || inst.nombre}</option>
-                      ))}
-                    </select>
-
-                    <input type="text" value={conversionRule} onChange={e => setConversionRule(e.target.value)} placeholder="Código de regla de conversión" />
-                    <button className="btn-primary" onClick={handleChangeInstitution}>Cambiar Institución</button>
-                  </div>
-                </div>
+                <p><strong>Institución:</strong> {user?.institucion_nombre || user?.institucion || 'Sin asignar'}</p>
               </div>
             </div>
             <button className="btn-download" onClick={handleDescargarAnalitico} disabled={reportLoading}>
@@ -187,10 +228,24 @@ const StudentProfile = ({ user, onLogout }) => {
                     <p className="code-label">{subject.codigo}</p>
                   </div>
                   <div className="subject-meta">
-                    <span className={`status-label ${(subject.estado || 'desconocido').toLowerCase()}`}>
-                      {(subject.estado || 'Desconocido').toUpperCase()}
+                    <span className={`status-label ${subject.es_equivalencia ? 'aprobado-equivalencia' : (subject.estado || 'desconocido').toLowerCase().replace(/\s+/g, '-').replace(/[()]/g, '')}`}>
+                      {subject.es_equivalencia ? 'APROBADO (EQUIVALENCIA)' : (subject.estado || 'Desconocido').toUpperCase()}
                     </span>
-                    {subject.nota && <span className="grade-label">Nota: {subject.nota}</span>}
+                    {subject.es_equivalencia && subject.nota_original != null && (
+                      <span className="equivalencia-original" title="Nota original antes de conversión">Orig: {subject.nota_original}</span>
+                    )}
+                    {subject.es_equivalencia && subject.materia_origen_nombre && (
+                      <span className="equivalencia-origen" title="Materia de origen">← {subject.materia_origen_nombre}</span>
+                    )}
+                    {subject.es_equivalencia && subject.metodo_conversion && (
+                      <span className="equivalencia-metodo" title="Método de conversión">Regla: {subject.metodo_conversion}</span>
+                    )}
+                    {subject.es_equivalencia && subject.fecha_conversion && (
+                      <span className="equivalencia-fecha" title="Fecha de conversión">
+                        {new Date(subject.fecha_conversion).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                    {subject.nota != null && <span className="grade-label">Nota: {subject.nota}</span>}
                   </div>
                 </div>
 

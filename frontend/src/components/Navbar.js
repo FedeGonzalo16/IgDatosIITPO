@@ -51,7 +51,7 @@ const Navbar = ({ user, onLogout }) => {
                     </Link>
                   </li>
                   <li className="nav-item">
-                    <Link to="/student/subjects" className="nav-links">
+                    <Link to="/student" state={{ openMenu: 'perfil' }} className="nav-links">
                       <BarChart3 size={18} />
                       Mi Perfil
                     </Link>

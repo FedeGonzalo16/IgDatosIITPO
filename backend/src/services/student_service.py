@@ -100,13 +100,22 @@ class StudentService:
         db = get_mongo()
         db.estudiantes.update_one({"_id": ObjectId(uid)}, {"$set": data})
         
-        # Sync Neo4j
-        if 'nombre' in data or 'apellido' in data:
-            with get_neo4j() as session:
+        with get_neo4j() as session:
+            if 'nombre' in data or 'apellido' in data:
                 session.run("""
                     MATCH (e:Estudiante {id_mongo: $id})
                     SET e.nombre = $nombre, e.apellido = $apellido
                 """, id=uid, nombre=data.get('nombre', ''), apellido=data.get('apellido', ''))
+            if 'institucion_id' in data:
+                inst_id = str(data['institucion_id']).strip()
+                session.run("""
+                    MATCH (e:Estudiante {id_mongo: $est_id})
+                    OPTIONAL MATCH (e)-[r:PERTENECE_A]->()
+                    DELETE r
+                    WITH e
+                    MATCH (i:Institucion {id_mongo: $new_inst_id})
+                    MERGE (e)-[:PERTENECE_A]->(i)
+                """, est_id=uid, new_inst_id=inst_id)
         return True
 
     @staticmethod
@@ -141,10 +150,17 @@ class StudentService:
         
         with get_neo4j() as session:
             # 2. Buscar materias que el alumno aprobó y que tienen equivalencia en la nueva institución
+            # - Solo APROBADO (excluye REPROBADO; recursadas fallidas no se usan)
+            # - Excluye si ya tiene CURSÓ a mat_destino (evita duplicados al cambiar 2 veces)
+            # - Si hay múltiples CURSÓ a la misma materia (recursada aprobada), toma solo la más reciente
             equiv_query = """
                 MATCH (e:Estudiante {id_mongo: $est_id})-[r_curso:CURSÓ]->(mat_origen:Materia)
                 WHERE r_curso.estado = 'APROBADO'
                 MATCH (mat_origen)-[:EQUIVALE_A]-(mat_destino:Materia)-[:PERTENECE_A]->(inst_nueva:Institucion {id_mongo: $new_inst_id})
+                WHERE NOT (e)-[:CURSÓ]->(mat_destino)
+                WITH mat_origen, mat_destino, r_curso
+                ORDER BY r_curso.fecha_cierre DESC
+                WITH mat_origen, mat_destino, collect(r_curso)[0] AS r_curso
                 RETURN mat_origen.id_mongo AS id_mat_origen,
                        mat_origen.nombre AS materia_origen, 
                        r_curso.final AS nota_origen, 
@@ -153,7 +169,13 @@ class StudentService:
             """
             equivalencias = session.run(equiv_query, est_id=estudiante_id, new_inst_id=nueva_institucion_id).data()
             
+            # Evitar procesar el mismo (origen, destino) dos veces (recursada o duplicados en grafo)
+            procesados = set()
             for eq in equivalencias:
+                clave = (str(eq['id_mat_origen']), str(eq['id_mat_destino']))
+                if clave in procesados:
+                    continue
+                procesados.add(clave)
                 nota_origen = eq['nota_origen']
                 nota_convertida = nota_origen # Fallback por si falla la regla
                 
@@ -165,29 +187,57 @@ class StudentService:
                             nota_convertida = mapeo['nota_destino']
                             break
                 
-                # 4. Registrar la nueva relación en Neo4j (Equivalencia Aprobada)
+                # 4. Registrar la nueva relación en Neo4j solo si no existe (evita duplicados)
+                existe = session.run("""
+                    MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(mat_destino:Materia {id_mongo: $id_mat_destino})
+                    RETURN count(r) AS n
+                """, est_id=estudiante_id, id_mat_destino=eq['id_mat_destino']).single()
+                if existe and existe['n'] > 0:
+                    continue
+                fecha_conv = datetime.utcnow()
                 session.run("""
                     MATCH (e:Estudiante {id_mongo: $est_id}), (mat_destino:Materia {id_mongo: $id_mat_destino})
                     CREATE (e)-[r:CURSÓ {
                         estado: 'APROBADO (EQUIVALENCIA)',
                         final: $nota_convertida,
                         nota_original: $nota_origen,
-                        fecha_cierre: $fecha,
-                        metodo_conversion: $regla
+                        fecha_cierre: $fecha_conv,
+                        metodo_conversion: $regla,
+                        materia_origen_id: $materia_origen_id,
+                        materia_origen_nombre: $materia_origen_nombre,
+                        fecha_conversion: $fecha_conv
                     }]->(mat_destino)
                 """, est_id=estudiante_id, id_mat_destino=eq['id_mat_destino'], 
                      nota_convertida=nota_convertida, nota_origen=nota_origen, 
-                     fecha=datetime.utcnow().isoformat(), regla=regla_conversion_codigo)
+                     fecha_conv=fecha_conv.isoformat(), regla=regla_conversion_codigo,
+                     materia_origen_id=eq['id_mat_origen'], materia_origen_nombre=eq['materia_origen'])
                 
-                # 5. Guardar la calificación inmutable en Mongo
-                db.calificaciones.insert_one({
+                # 5. Guardar la calificación inmutable en Mongo (evita duplicados)
+                ya_existe = db.calificaciones.find_one({
                     "estudiante_id": ObjectId(estudiante_id),
                     "materia_id": ObjectId(eq['id_mat_destino']),
-                    "valor_original": {"nota": nota_origen, "tipo": "EQUIVALENCIA_ORIGEN"},
-                    "valor_convertido": {"nota": nota_convertida, "regla": regla_conversion_codigo},
-                    "estado": "APROBADO (EQUIVALENCIA)",
-                    "created_at": datetime.utcnow()
+                    "estado": "APROBADO (EQUIVALENCIA)"
                 })
+                if not ya_existe:
+                    fecha_conv = datetime.utcnow()
+                    db.calificaciones.insert_one({
+                        "estudiante_id": ObjectId(estudiante_id),
+                        "materia_id": ObjectId(eq['id_mat_destino']),
+                        "valor_original": {
+                            "nota": nota_origen,
+                            "tipo": "EQUIVALENCIA_ORIGEN",
+                            "materia_origen_id": eq['id_mat_origen'],
+                            "materia_origen_nombre": eq['materia_origen']
+                        },
+                        "valor_convertido": {
+                            "nota": nota_convertida,
+                            "regla": regla_conversion_codigo,
+                            "metodo": regla_conversion_codigo,
+                            "fecha_conversion": fecha_conv
+                        },
+                        "estado": "APROBADO (EQUIVALENCIA)",
+                        "created_at": fecha_conv
+                    })
                 
                 materias_homologadas.append({
                     "materia": eq['materia_destino'],

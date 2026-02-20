@@ -7,8 +7,10 @@ import {
   institutionService, 
   studentService, 
   gradeService,
-  trajectoryService
+  trajectoryService,
+  reportService
 } from '../services/api';
+import { descargarCertificadoAnalitico } from '../utils/certificadoAnalitico';
 import './StudentMenuContent.css';
 
 const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
@@ -24,7 +26,14 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [trajectory, setTrajectory] = useState(null);
+  const [institutions, setInstitutions] = useState([]);
+  const [conversionRules, setConversionRules] = useState([]);
+  const [selectedInstitution, setSelectedInstitution] = useState('');
+  const [selectedRule, setSelectedRule] = useState('AR_TO_US');
   const [trajectoryLoading, setTrajectoryLoading] = useState(true);
+  const [subjects, setSubjects] = useState([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
     const loadTrajectory = async () => {
@@ -99,6 +108,93 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
     fetchInstitutionName();
   }, [user]);
 
+  useEffect(() => {
+    const loadProfileData = async () => {
+      if (!user?._id && !user?.id) return;
+      const studentId = user._id || user.id;
+      try {
+        const [gradesRes, instRes, rulesRes] = await Promise.all([
+          gradeService.getByStudent(studentId),
+          institutionService.getAll().catch(() => ({ data: [] })),
+          conversionService.getAllRules().catch(() => ({ data: [] }))
+        ]);
+        const subjList = gradesRes.data || [];
+        const mapped = subjList.map((s, idx) => {
+          const comps = [];
+          if (s.notas) {
+            if (s.notas.primer_parcial !== null) comps.push({ tipo: 'Primer Parcial', valor: s.notas.primer_parcial });
+            if (s.notas.segundo_parcial !== null) comps.push({ tipo: 'Segundo Parcial', valor: s.notas.segundo_parcial });
+            if (s.notas.final !== null) comps.push({ tipo: 'Final', valor: s.notas.final });
+            if (s.notas.previo !== null) comps.push({ tipo: 'Previo', valor: s.notas.previo });
+          }
+          let notaFinal = null;
+          if (s.notas?.final != null) notaFinal = s.notas.final;
+          else if (s.notas?.previo != null) notaFinal = s.notas.previo;
+          else if (s.estado?.startsWith?.('APROBADO') || s.estado === 'REPROBADO') notaFinal = s.notas?.final || s.notas?.previo;
+          return {
+            materia_id: s.materia_id, id: idx,
+            codigo: s.materia_codigo || 'N/A',
+            nombre: s.materia_nombre || 'Materia Desconocida',
+            estado: s.estado || 'CURSANDO',
+            nota: notaFinal,
+            es_equivalencia: s.es_equivalencia || s.estado?.includes?.('EQUIVALENCIA'),
+            nota_original: s.nota_original,
+            materia_origen_nombre: s.materia_origen_nombre,
+            metodo_conversion: s.metodo_conversion,
+            fecha_conversion: s.fecha_conversion,
+            componentes: comps,
+            profesor: 'Sin asignar',
+            anio: s.anio || 'Sin fecha',
+            fecha_cierre: s.fecha_cierre || null
+          };
+        });
+        setSubjects(mapped);
+        setInstitutions(instRes.data || []);
+        const rules = rulesRes.data || [];
+        setConversionRules(rules);
+        if (rules.length > 0 && !rules.find(r => r.codigo_regla === selectedRule)) setSelectedRule(rules[0].codigo_regla);
+        setSelectedInstitution(user?.institucion_id || user?.institucion || '');
+      } catch (err) {
+        console.error('Error loading profile:', err);
+      } finally {
+        setSubjectsLoading(false);
+      }
+    };
+    loadProfileData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id, user?.id]);
+
+  const handleDescargarAnalitico = async () => {
+    const studentId = user?._id || user?.id;
+    if (!studentId) return;
+    await descargarCertificadoAnalitico(reportService, studentId, user, setReportLoading);
+  };
+
+  const handleChangeInstitution = async () => {
+    if (!selectedInstitution) return;
+    const studentId = user?._id || user?.id;
+    if (!studentId) return;
+    try {
+      setLoading(true);
+      const result = await studentService.cambiarInstitucion(studentId, selectedInstitution, selectedRule);
+      const res = await studentService.getById(studentId);
+      const inst = institutions.find(i => String(i._id) === String(selectedInstitution));
+      const updatedUser = { ...user, ...res.data, institucion_id: selectedInstitution };
+      if (inst) updatedUser.institucion = inst.nombre;
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      if (onUpdate) onUpdate(updatedUser);
+      setSuccessMessage(result.data?.total_homologadas > 0
+        ? `Institución cambiada. ${result.data.total_homologadas} materia(s) aprobada(s) por equivalencia.`
+        : 'Institución cambiada correctamente');
+      setSelectedInstitution('');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setErrorMessage(err.response?.data?.error || 'Error al cambiar institución');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="menu-content">
       <div className="content-header">
@@ -107,6 +203,9 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
         </button>
         <h2>Mi Perfil</h2>
         <div className="profile-header-actions">
+          <button className="btn-download-analitico" onClick={handleDescargarAnalitico} disabled={reportLoading}>
+            {reportLoading ? 'Generando...' : 'Descargar analítico'}
+          </button>
           {!isEditing ? (
             <button className="btn-edit-profile" onClick={() => setIsEditing(true)}>
               Editar Perfil
@@ -189,6 +288,27 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
               <div className="detail-row">
                 <span>Email:</span>
                 <strong>{user?.email || 'N/A'}</strong>
+        <div className="detail-card change-institution-section">
+          <h3>Cambiar Institución</h3>
+          <p><strong>Institución actual:</strong> {institutionName || user?.institucion || 'No asignada'}</p>
+          <div className="change-institution-inline">
+            <select value={selectedInstitution} onChange={e => setSelectedInstitution(e.target.value)}>
+              <option value="">-- Seleccione destino --</option>
+              {institutions.filter(i => String(i._id) !== String(user?.institucion_id) && String(i._id) !== String(user?.institucion)).map(inst => (
+                <option key={inst._id} value={inst._id}>{inst.nombre}</option>
+              ))}
+            </select>
+            <select value={selectedRule} onChange={e => setSelectedRule(e.target.value)}>
+              {conversionRules.length > 0 ? conversionRules.map(r => (
+                <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
+              )) : <option value="AR_TO_US">AR_TO_US</option>}
+            </select>
+            <button className="btn-confirm-small" onClick={handleChangeInstitution} disabled={!selectedInstitution || loading}>
+              {loading ? 'Cambiando...' : 'Cambiar'}
+            </button>
+          </div>
+        </div>
+
               </div>
               <div className="detail-row">
                 <span>Legajo:</span>
@@ -223,7 +343,66 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
           <div className="detail-row">
             <span>Total de Materias:</span>
             <strong>{stats?.totalSubjects || '0'}</strong>
+        <div className="detail-card change-institution-section">
+          <h3>Cambiar Institución</h3>
+          <p><strong>Institución actual:</strong> {institutionName || user?.institucion || 'No asignada'}</p>
+          <div className="change-institution-inline">
+            <select value={selectedInstitution} onChange={e => setSelectedInstitution(e.target.value)}>
+              <option value="">-- Seleccione destino --</option>
+              {institutions.filter(i => String(i._id) !== String(user?.institucion_id) && String(i._id) !== String(user?.institucion)).map(inst => (
+                <option key={inst._id} value={inst._id}>{inst.nombre}</option>
+              ))}
+            </select>
+            <select value={selectedRule} onChange={e => setSelectedRule(e.target.value)}>
+              {conversionRules.length > 0 ? conversionRules.map(r => (
+                <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
+              )) : <option value="AR_TO_US">AR_TO_US</option>}
+            </select>
+            <button className="btn-confirm-small" onClick={handleChangeInstitution} disabled={!selectedInstitution || loading}>
+              {loading ? 'Cambiando...' : 'Cambiar'}
+            </button>
           </div>
+        </div>
+
+          </div>
+        </div>
+
+        <div className="detail-card historial-detallado-section">
+          <h3>📚 Historial Académico Detallado</h3>
+          {subjectsLoading ? (
+            <p className="trajectory-loading">Cargando materias...</p>
+          ) : subjects.length === 0 ? (
+            <p className="trajectory-empty">No hay materias registradas.</p>
+          ) : (
+            <div className="historial-cards">
+              {subjects.map(subject => (
+                <div key={subject.id} className="subject-detail-card-mini">
+                  <div className="subject-detail-header-mini">
+                    <div>
+                      <h4>{subject.nombre}</h4>
+                      <p className="code-label">{subject.codigo}</p>
+                    </div>
+                    <div className="subject-meta-mini">
+                      <span className={`status-badge ${subject.es_equivalencia ? 'equivalencia' : (subject.estado || '').toLowerCase()}`}>
+                        {subject.es_equivalencia ? 'Equivalencia' : (subject.estado || 'N/A')}
+                      </span>
+                      {subject.nota != null && <span className="grade-badge-mini">{subject.nota}</span>}
+                      {subject.es_equivalencia && subject.nota_original != null && (
+                        <span className="orig-badge">Orig: {subject.nota_original}</span>
+                      )}
+                    </div>
+                  </div>
+                  {subject.componentes?.length > 0 && (
+                    <div className="componentes-mini">
+                      {subject.componentes.map((c, i) => (
+                        <span key={i}>{c.tipo}: {c.valor}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="detail-card trajectory-section">
@@ -251,7 +430,17 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
                 ) : (
                   <ul className="trajectory-list">
                     {(trajectory.materias_aprobadas || []).map((m, idx) => (
-                      <li key={idx} className="trajectory-item approved"><strong>{m.nombre}</strong> ({m.codigo}) — Nota: {m.nota_final} — Año {m.anio}</li>
+                      <li key={idx} className="trajectory-item approved">
+                        <strong>{m.nombre}</strong> ({m.codigo}) — Nota: {m.nota_final ?? m.notas?.final ?? m.notas?.previo ?? 'N/A'}
+                        {m.es_equivalencia && <span className="equivalencia-badge" title="Aprobada por equivalencia"> (Equivalencia)</span>}
+                        {m.nota_original != null && m.es_equivalencia && <span> — Orig: {m.nota_original}</span>}
+                        {m.materia_origen_nombre && m.es_equivalencia && <span> ← {m.materia_origen_nombre}</span>}
+                        {m.metodo_conversion && m.es_equivalencia && <span className="equivalencia-metodo"> Regla: {m.metodo_conversion}</span>}
+                        {m.fecha_conversion && m.es_equivalencia && (
+                          <span className="equivalencia-fecha"> {new Date(m.fecha_conversion).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        )}
+                        {' '}— Año {m.anio}
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -638,6 +827,8 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
 
 const ChangeInstitution = ({ user, onBack, onUpdate }) => {
   const [institutions, setInstitutions] = useState([]);
+  const [conversionRules, setConversionRules] = useState([]);
+  const [selectedRule, setSelectedRule] = useState('AR_TO_US');
   const [loading, setLoading] = useState(true);
   const [selectedInst, setSelectedInst] = useState(null);
   const [currentInstitution, setCurrentInstitution] = useState(null);
@@ -654,13 +845,20 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
       setLoading(true);
       const studentId = user?._id || user?.id;
       
-      const [institutionsRes, userRes] = await Promise.all([
+      const [institutionsRes, userRes, rulesRes] = await Promise.all([
         institutionService.getAll(),
-        studentId ? studentService.getById(studentId) : Promise.resolve({ data: null })
+        studentId ? studentService.getById(studentId) : Promise.resolve({ data: null }),
+        conversionService.getAllRules().catch(() => ({ data: [] }))
       ]);
 
       const allInstitutions = institutionsRes.data || [];
+      const rules = rulesRes.data || [];
       setInstitutions(allInstitutions);
+      setConversionRules(rules);
+      
+      if (rules.length > 0 && !rules.find(r => r.codigo_regla === selectedRule)) {
+        setSelectedRule(rules[0].codigo_regla);
+      }
       
       let instId = null;
       if (userRes.data) {
@@ -695,18 +893,27 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
         return;
       }
 
-      await studentService.update(studentId, {
-        institucion_id: selectedInst._id
-      });
+      const result = await studentService.cambiarInstitucion(
+        studentId,
+        selectedInst._id,
+        selectedRule
+      );
 
+      const res = await studentService.getById(studentId);
       const updatedUser = { 
         ...user, 
+        ...res.data,
         institucion_id: selectedInst._id, 
-        institucion: selectedInst.nombre 
+        institucion: selectedInst.nombre,
+        institucion_nombre: selectedInst.nombre
       };
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
-      setSuccessMessage(`Institución cambiada a ${selectedInst.nombre} exitosamente`);
+      const homologadas = result.data?.total_homologadas ?? result.data?.materias_homologadas?.length ?? 0;
+      const msg = homologadas > 0
+        ? `Institución cambiada a ${selectedInst.nombre}. ${homologadas} materia(s) aprobada(s) por equivalencia.`
+        : `Institución cambiada a ${selectedInst.nombre} exitosamente`;
+      setSuccessMessage(msg);
       setCurrentInstitution(selectedInst);
       setSelectedInst(null);
       
@@ -793,7 +1000,19 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
         {selectedInst && (
           <div className="change-confirmation">
             <h3>¿Cambiar a {selectedInst.nombre}?</h3>
-            <p>Al cambiar de institución, solo podrás inscribirte a materias de la nueva institución.</p>
+            <p>Al cambiar de institución se aplicarán automáticamente las equivalencias de materias aprobadas y la conversión de notas.</p>
+            <div className="form-group" style={{ marginBottom: '15px' }}>
+              <label>Regla de conversión de notas</label>
+              <select 
+                value={selectedRule} 
+                onChange={e => setSelectedRule(e.target.value)}
+                style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+              >
+                {conversionRules.map(r => (
+                  <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
+                ))}
+              </select>
+            </div>
             <div className="confirmation-buttons">
               <button className="btn-cancel" onClick={() => setSelectedInst(null)} disabled={saving}>
                 Cancelar

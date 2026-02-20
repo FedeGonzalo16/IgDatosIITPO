@@ -156,7 +156,7 @@ class GradingService:
                     }
                 })
             
-            # Obtener materias cursadas (histórico)
+            # Obtener materias cursadas (histórico, incluye equivalencias)
             result_historico = session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(m:Materia)
                 RETURN m.id_mongo as materia_id, m.nombre as materia_nombre,
@@ -164,7 +164,10 @@ class GradingService:
                        r.primer_parcial as primer_parcial,
                        r.segundo_parcial as segundo_parcial,
                        r.final as final, r.previo as previo,
-                       r.fecha_cierre as fecha_cierre
+                       r.fecha_cierre as fecha_cierre,
+                       r.nota_original as nota_original, r.metodo_conversion as metodo_conversion,
+                       r.materia_origen_id as materia_origen_id, r.materia_origen_nombre as materia_origen_nombre,
+                       r.fecha_conversion as fecha_conversion
                 ORDER BY r.fecha_cierre DESC
             """, est_id=est_id)
             
@@ -176,6 +179,11 @@ class GradingService:
                     "anio": record["anio"],
                     "estado": record["estado"],
                     "fecha_cierre": str(record["fecha_cierre"]) if record["fecha_cierre"] else None,
+                    "es_equivalencia": record["estado"] == "APROBADO (EQUIVALENCIA)" if record["estado"] else False,
+                    "nota_original": record["nota_original"],
+                    "metodo_conversion": record["metodo_conversion"],
+                    "materia_origen_nombre": record["materia_origen_nombre"],
+                    "fecha_conversion": str(record["fecha_conversion"]) if record["fecha_conversion"] else None,
                     "notas": {
                         "primer_parcial": record["primer_parcial"],
                         "segundo_parcial": record["segundo_parcial"],

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, BookOpen, Building2, Calculator, Menu, X } from 'lucide-react';
+import { BookOpen, Building2, Calculator, Menu, X } from 'lucide-react';
 import './StudentSidebar.css';
 
 const StudentSidebar = ({ user, onMenuSelect, activeMenu }) => {
@@ -11,12 +11,6 @@ const StudentSidebar = ({ user, onMenuSelect, activeMenu }) => {
   };
 
   const menuItems = [
-    {
-      id: 'perfil',
-      label: 'Mi Perfil',
-      icon: User,
-      description: 'Ver información personal y académica'
-    },
     {
       id: 'inscribirse',
       label: 'Inscribirse a Materias',
