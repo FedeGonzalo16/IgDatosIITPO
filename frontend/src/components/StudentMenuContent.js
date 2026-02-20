@@ -502,11 +502,11 @@ const StudentEnrollment = ({ user, onBack, onEnroll }) => {
       const materiasCursadasIds = enrolled.map(e => e.materia_id);
       let filtered = allSubjects.filter(s => !materiasCursadasIds.includes(s._id));
       
-      // Si el usuario tiene institución, filtrar por institución (solo estudiantes, no admin)
-      if (userInstitution && !isAdmin) {
+      // Filtrar por institución del estudiante (usar userInstId, variable local actualizada en este ciclo)
+      if (userInstId && !isAdmin) {
         filtered = filtered.filter(s => {
           const subjInstId = s.institucion_id?._id || s.institucion_id;
-          return String(subjInstId) === String(userInstitution);
+          return String(subjInstId) === String(userInstId);
         });
       }
       
