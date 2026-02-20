@@ -14,10 +14,6 @@ const StudentProfile = ({ user, onLogout }) => {
   const [selectedInstitution, setSelectedInstitution] = useState('');
   const [conversionRule, setConversionRule] = useState('AR_TO_US');
   const [localUser, setLocalUser] = useState(user || {});
-  const [institutions, setInstitutions] = useState([]);
-  const [selectedInstitution, setSelectedInstitution] = useState('');
-  const [conversionRule, setConversionRule] = useState('AR_TO_US');
-  const [localUser, setLocalUser] = useState(user || {});
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
@@ -35,20 +31,6 @@ const StudentProfile = ({ user, onLogout }) => {
     const element = document.createElement('a');
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(reportContent));
     element.setAttribute('download', `reporte_academico_${user?.legajo || 'estudiante'}.txt`);
-    // Sincronizar prop `user` con copy local
-    setLocalUser(user || {});
-
-    // Cargar lista de instituciones para el selector
-    const loadInstitutions = async () => {
-      try {
-        const res = await institutionService.getAll();
-        setInstitutions(res.data || []);
-      } catch (e) {
-        console.warn('No se pudieron cargar instituciones:', e);
-      }
-    };
-    loadInstitutions();
-
     element.style.display = 'none';
     document.body.appendChild(element);
     element.click();
@@ -99,9 +81,6 @@ const StudentProfile = ({ user, onLogout }) => {
           else if (s.notas?.previo !== null && s.notas?.previo !== undefined) notaFinal = s.notas.previo;
           else if ((s.estado && s.estado.toString().startsWith('APROBADO')) || s.estado === 'REPROBADO') notaFinal = s.notas?.final || s.notas?.previo;
 
-        // Set selectedInstitution to current if existe
-        setSelectedInstitution(user?.institucion_id || user?.institucion || '');
-        
           return {
             materia_id: s.materia_id,
             id: idx,
@@ -112,28 +91,6 @@ const StudentProfile = ({ user, onLogout }) => {
             es_equivalencia: s.es_equivalencia || (s.estado && s.estado.toString().includes('EQUIVALENCIA')),
             nota_original: s.nota_original,
             materia_origen_nombre: s.materia_origen_nombre,
-  const handleChangeInstitution = async () => {
-    const studentId = user?._id || user?.id || user?.id_mongo || user?.mongo_id;
-    if (!selectedInstitution) return alert('Seleccione una institución destino.');
-    try {
-      const result = await studentService.cambiarInstitucion(studentId, selectedInstitution, conversionRule);
-      const res = await studentService.getById(studentId);
-      const updatedUser = { ...user, ...res.data, institucion_id: selectedInstitution };
-      const inst = (institutions || []).find(i => String(i._id) === String(selectedInstitution));
-      if (inst) updatedUser.institucion = inst.nombre;
-      setLocalUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-      if (onUserUpdate) onUserUpdate(updatedUser);
-      const homologadas = result.data?.total_homologadas ?? result.data?.materias_homologadas?.length ?? 0;
-      alert(homologadas > 0
-        ? `Institución cambiada. ${homologadas} materia(s) aprobada(s) por equivalencia.`
-        : 'Institución cambiada correctamente');
-    } catch (err) {
-      console.error('Error al cambiar institución:', err);
-      alert('Error al cambiar institución: ' + (err.response?.data?.error || err.message));
-    }
-  };
-
             metodo_conversion: s.metodo_conversion,
             fecha_conversion: s.fecha_conversion,
             componentes: comps,

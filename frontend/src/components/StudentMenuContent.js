@@ -288,26 +288,6 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
               <div className="detail-row">
                 <span>Email:</span>
                 <strong>{user?.email || 'N/A'}</strong>
-        <div className="detail-card change-institution-section">
-          <h3>Cambiar Institución</h3>
-          <p><strong>Institución actual:</strong> {institutionName || user?.institucion || 'No asignada'}</p>
-          <div className="change-institution-inline">
-            <select value={selectedInstitution} onChange={e => setSelectedInstitution(e.target.value)}>
-              <option value="">-- Seleccione destino --</option>
-              {institutions.filter(i => String(i._id) !== String(user?.institucion_id) && String(i._id) !== String(user?.institucion)).map(inst => (
-                <option key={inst._id} value={inst._id}>{inst.nombre}</option>
-              ))}
-            </select>
-            <select value={selectedRule} onChange={e => setSelectedRule(e.target.value)}>
-              {conversionRules.length > 0 ? conversionRules.map(r => (
-                <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
-              )) : <option value="AR_TO_US">AR_TO_US</option>}
-            </select>
-            <button className="btn-confirm-small" onClick={handleChangeInstitution} disabled={!selectedInstitution || loading}>
-              {loading ? 'Cambiando...' : 'Cambiar'}
-            </button>
-          </div>
-        </div>
 
               </div>
               <div className="detail-row">
@@ -343,27 +323,6 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
           <div className="detail-row">
             <span>Total de Materias:</span>
             <strong>{stats?.totalSubjects || '0'}</strong>
-        <div className="detail-card change-institution-section">
-          <h3>Cambiar Institución</h3>
-          <p><strong>Institución actual:</strong> {institutionName || user?.institucion || 'No asignada'}</p>
-          <div className="change-institution-inline">
-            <select value={selectedInstitution} onChange={e => setSelectedInstitution(e.target.value)}>
-              <option value="">-- Seleccione destino --</option>
-              {institutions.filter(i => String(i._id) !== String(user?.institucion_id) && String(i._id) !== String(user?.institucion)).map(inst => (
-                <option key={inst._id} value={inst._id}>{inst.nombre}</option>
-              ))}
-            </select>
-            <select value={selectedRule} onChange={e => setSelectedRule(e.target.value)}>
-              {conversionRules.length > 0 ? conversionRules.map(r => (
-                <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
-              )) : <option value="AR_TO_US">AR_TO_US</option>}
-            </select>
-            <button className="btn-confirm-small" onClick={handleChangeInstitution} disabled={!selectedInstitution || loading}>
-              {loading ? 'Cambiando...' : 'Cambiar'}
-            </button>
-          </div>
-        </div>
-
           </div>
         </div>
 
