@@ -839,6 +839,19 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
     }
   };
 
+  // Cuando cambia la institución destino, auto-seleccionar la regla que corresponde
+  // al par pais_origen → pais_destino
+  useEffect(() => {
+    if (!selectedInst || !currentInstitution || conversionRules.length === 0) return;
+    const fromPais = currentInstitution.pais?.toUpperCase();
+    const toPais = selectedInst.pais?.toUpperCase();
+    if (!fromPais || !toPais) return;
+    const prefix = `${fromPais}_TO_${toPais}`;
+    const matching = conversionRules.filter(r => r.codigo_regla.startsWith(prefix));
+    if (matching.length > 0) setSelectedRule(matching[0].codigo_regla);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInst, currentInstitution, conversionRules]);
+
   const handleChangeInstitution = async () => {
     if (!selectedInst) return;
     
@@ -967,9 +980,18 @@ const ChangeInstitution = ({ user, onBack, onUpdate }) => {
                 onChange={e => setSelectedRule(e.target.value)}
                 style={{ width: '100%', padding: '8px', marginTop: '4px' }}
               >
-                {conversionRules.map(r => (
-                  <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
-                ))}
+                {(() => {
+                  const fromPais = currentInstitution?.pais?.toUpperCase();
+                  const toPais = selectedInst?.pais?.toUpperCase();
+                  const prefix = fromPais && toPais ? `${fromPais}_TO_${toPais}` : '';
+                  const filtered = prefix
+                    ? conversionRules.filter(r => r.codigo_regla.startsWith(prefix))
+                    : conversionRules;
+                  const toRender = filtered.length > 0 ? filtered : conversionRules;
+                  return toRender.map(r => (
+                    <option key={r.codigo_regla} value={r.codigo_regla}>{r.nombre || r.codigo_regla}</option>
+                  ));
+                })()}
               </select>
             </div>
             <div className="confirmation-buttons">
@@ -1260,4 +1282,4 @@ const ConvertGrades = ({ historial = [], user, onBack }) => {
   );
 };
 
-export { StudentProfile, StudentEnrollment, ChangeInstitution, ConvertGrades };
+export { StudentProfile, StudentEnrollment, ChangeInstitution };

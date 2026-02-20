@@ -5,8 +5,7 @@ import StudentSidebar from '../components/StudentSidebar';
 import {
   StudentProfile,
   StudentEnrollment,
-  ChangeInstitution,
-  ConvertGrades
+  ChangeInstitution
 } from '../components/StudentMenuContent';
 import { BookOpen, CheckCircle, Target, TrendingUp } from 'lucide-react';
 import { gradeService } from '../services/api';
@@ -172,9 +171,7 @@ const StudentDashboard = ({ user, onLogout, onUserUpdate }) => {
     if (activeMenu === 'institucion') {
       return <ChangeInstitution user={user} onBack={() => setActiveMenu('inicio')} onUpdate={handleUserUpdate} />;
     }
-    if (activeMenu === 'convertir') {
-      return <ConvertGrades historial={historial} user={user} onBack={() => setActiveMenu('inicio')} />;
-    }
+
 
     const materiasEnCurso = historial.filter(h => h.estado === 'CURSANDO' || h.estado === 'EN_CURSO' || !h.fecha_cierre);
     const materiasAprobadas = historial.filter(h => 

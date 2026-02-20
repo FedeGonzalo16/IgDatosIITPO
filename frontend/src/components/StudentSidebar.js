@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, Building2, Calculator, Menu, X } from 'lucide-react';
+import { BookOpen, Building2, Menu, X } from 'lucide-react';
 import './StudentSidebar.css';
 
 const StudentSidebar = ({ user, onMenuSelect, activeMenu }) => {
@@ -23,12 +23,6 @@ const StudentSidebar = ({ user, onMenuSelect, activeMenu }) => {
       icon: Building2,
       description: 'Cambiar tu institución educativa'
     },
-    {
-      id: 'convertir',
-      label: 'Convertir Notas',
-      icon: Calculator,
-      description: 'Convertir y comparar tus calificaciones'
-    }
   ];
 
   return (
