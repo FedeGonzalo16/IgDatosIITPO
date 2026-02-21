@@ -89,20 +89,29 @@ const StudentProfile = ({ user, onBack, stats, onUpdate }) => {
 
   useEffect(() => {
     const fetchInstitutionName = async () => {
-      try {
-        const instsRes = await institutionService.getAll().catch(() => ({ data: [] }));
-        const insts = instsRes.data || [];
-        const instId = user?.institucion_id || user?.institucion;
-        if (!instId) {
-          setInstitutionName(user?.institucion || 'No asignada');
-          return;
-        }
-        const found = insts.find(i => String(i._id) === String(instId) || i.nombre === instId);
-        if (found) setInstitutionName(found.nombre);
-        else setInstitutionName(typeof instId === 'string' ? instId : (user?.institucion || 'No asignada'));
-      } catch (e) {
-        console.warn('Could not load institution name:', e);
+      // 1. El nombre ya viene en el objeto user (login reciente)
+      if (user?.institucion_nombre) {
+        setInstitutionName(user.institucion_nombre);
+        return;
       }
+      // 2. Sesión antigua en localStorage sin institucion_nombre: refrescamos desde la API
+      const studentId = user?._id || user?.id;
+      if (studentId) {
+        try {
+          const res = await studentService.getById(studentId);
+          const freshData = res.data;
+          if (freshData?.institucion_nombre) {
+            setInstitutionName(freshData.institucion_nombre);
+            // Actualizar localStorage para futuras cargas
+            const updated = { ...user, ...freshData };
+            localStorage.setItem('user', JSON.stringify(updated));
+            return;
+          }
+        } catch (e) {
+          console.warn('Could not refresh student data:', e);
+        }
+      }
+      setInstitutionName('No asignada');
     };
 
     fetchInstitutionName();

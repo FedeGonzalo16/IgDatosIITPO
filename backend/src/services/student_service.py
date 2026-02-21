@@ -132,8 +132,28 @@ class StudentService:
     def get_by_email(email):
         db = get_mongo()
         student = db.estudiantes.find_one({"email": email})
-        if student:
-            student['_id'] = str(student['_id'])
+        if not student:
+            return None
+        student['_id'] = str(student['_id'])
+        # Join con Neo4j para incluir institución (igual que get_by_id)
+        try:
+            with get_neo4j() as session:
+                result = session.run("""
+                    MATCH (e:Estudiante {id_mongo: $uid})-[:PERTENECE_A]->(i:Institucion)
+                    RETURN i.id_mongo AS institucion_id,
+                           i.nombre   AS institucion_nombre,
+                           i.codigo   AS institucion_codigo
+                """, uid=student['_id'])
+                record = result.single()
+                if record:
+                    student['institucion_id']     = record['institucion_id']
+                    student['institucion_nombre'] = record['institucion_nombre']
+                    student['institucion_codigo'] = record['institucion_codigo']
+                else:
+                    student['institucion_id']     = None
+                    student['institucion_nombre'] = None
+        except Exception as e:
+            print(f"⚠️ Warning: No se pudo obtener la institución para el alumno {student['_id']}: {e}")
         return student
     
     @staticmethod
