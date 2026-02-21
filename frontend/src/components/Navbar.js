@@ -42,6 +42,13 @@ const Navbar = ({ user, onLogout }) => {
                     </Link>
                   </li>
                 </>
+              ) : user.rol === 'profesor' || user.rol === 'docente' ? (
+                <li className="nav-item">
+                  <Link to="/profesor" className="nav-links">
+                    <Home size={18} />
+                    Dashboard
+                  </Link>
+                </li>
               ) : (
                 <>
                   <li className="nav-item">
