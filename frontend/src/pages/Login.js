@@ -17,7 +17,7 @@ const Login = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      // 1. Unificamos la validación: TODO usuario entra con 123456 en desarrollo
+      // 1. Unificamos la validación: TODO usuario entra con 123456
       if (password !== '123456') {
         setError('Contraseña incorrecta. (Usa: 123456)');
         setLoading(false);
@@ -26,46 +26,57 @@ const Login = ({ onLogin }) => {
 
       let userData = null;
 
-      // 2. Búsqueda secuencial: Primero intentamos como Estudiante/Admin
-      try {
-        const response = await studentService.getByEmail(email);
-        userData = response.data;
-      } catch (err) {
-        // Si arroja 404 (No encontrado), buscamos en la colección de Profesores
-        if (err.response?.status === 404) {
-          try {
-            const resProf = await teacherService.getByEmail(email);
-            userData = resProf.data;
-          } catch (errProf) {
-             console.error("Fallo buscando profesor:", errProf.response?.data || errProf);
+      // 2. BYPASS DEL SUPER-ADMINISTRADOR
+      // Si el correo es el del admin, generamos su sesión directamente
+      if (email.toLowerCase() === 'admin@edugrade.com' || email.toLowerCase() === 'admin@example.com') {
+        userData = {
+          _id: 'admin-global-id',
+          nombre: 'Administrador Global',
+          email: email,
+          rol: 'admin'
+        };
+      } 
+      // 3. Si no es admin, buscamos secuencialmente en Mongo (Estudiantes y Profesores)
+      else {
+        try {
+          const response = await studentService.getByEmail(email);
+          userData = response.data;
+        } catch (err) {
+          if (err.response?.status === 404) {
+            try {
+              const resProf = await teacherService.getByEmail(email);
+              userData = resProf.data;
+            } catch (errProf) {
+               console.error("Fallo buscando profesor:", errProf.response?.data || errProf);
+            }
           }
         }
       }
 
+      // Si después de todo no hay datos, rechazamos el login
       if (!userData) {
         setError('Usuario no encontrado en la base de datos');
         setLoading(false);
         return;
       }
 
-      // 3. Preparar los datos del usuario para el frontend
+      // 4. Preparar los datos del usuario para el frontend
       if (!userData._id && !userData.id) {
         userData._id = userData._id || userData.id || `temp-${Date.now()}`;
       }
 
-      // Asignar rol si no viene definido en el documento
       if (!userData.rol) {
-        userData.rol = email.includes('admin') ? 'admin' : 'student';
+        userData.rol = 'student';
       }
 
-      // 4. Generar un token falso y guardar sesión
+      // 5. Generar un token y guardar sesión
       const token = 'token-' + Date.now();
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
       
       onLogin(userData, token);
       
-      // 5. Redireccionamiento dinámico por rol
+      // 6. Redireccionamiento dinámico por rol
       if (userData.rol === 'admin') navigate('/admin');
       else if (userData.rol === 'profesor' || userData.rol === 'docente') navigate('/profesor');
       else navigate('/student');
