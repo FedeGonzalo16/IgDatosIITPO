@@ -1,17 +1,16 @@
-/* frontend/src/pages/ProfessorDashboard.css */
 .dashboard-container {
   min-height: 100vh;
   background-color: #f4f7f6;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-.dashboard-content {
+.dashboard-container .dashboard-content {
   max-width: 1200px;
   margin: 0 auto;
   padding: 40px 20px;
 }
 
-.dashboard-content h1 {
+.dashboard-container .dashboard-content h1 {
   color: #2c3e50;
   margin-bottom: 30px;
   border-bottom: 2px solid #3498db;
@@ -19,15 +18,14 @@
   font-size: 2rem;
 }
 
-/* Selector de Materias */
-.materias-grid {
+.dashboard-container .materias-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 15px;
   margin-bottom: 30px;
 }
 
-.materia-btn {
+.dashboard-container .materia-btn {
   background-color: #ffffff;
   border: 1px solid #dcdde1;
   border-radius: 8px;
@@ -40,21 +38,20 @@
   box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-.materia-btn:hover {
+.dashboard-container .materia-btn:hover {
   border-color: #3498db;
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(52, 152, 219, 0.2);
 }
 
-.materia-btn.active {
+.dashboard-container .materia-btn.active {
   background-color: #3498db;
   color: white;
   border-color: #2980b9;
   box-shadow: 0 4px 10px rgba(52, 152, 219, 0.4);
 }
 
-/* Sección de Alumnos y Tabla */
-.alumnos-section {
+.dashboard-container .alumnos-section {
   background-color: #ffffff;
   border-radius: 10px;
   padding: 25px;
@@ -62,26 +59,27 @@
   animation: fadeIn 0.4s ease-in-out;
 }
 
-.alumnos-section h2 {
+.dashboard-container .alumnos-section h2 {
   color: #2c3e50;
   margin-top: 0;
   margin-bottom: 20px;
   font-size: 1.5rem;
 }
 
-.data-table {
+.dashboard-container .data-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
 }
 
-.data-table th, .data-table td {
+.dashboard-container .data-table th, 
+.dashboard-container .data-table td {
   padding: 15px;
   text-align: left;
   border-bottom: 1px solid #ecf0f1;
 }
 
-.data-table th {
+.dashboard-container .data-table th {
   background-color: #f8f9fa;
   color: #7f8c8d;
   font-weight: 600;
@@ -90,11 +88,11 @@
   letter-spacing: 0.5px;
 }
 
-.data-table tr:hover {
+.dashboard-container .data-table tr:hover {
   background-color: #fcfcfc;
 }
 
-.data-table input[type="number"] {
+.dashboard-container .data-table input[type="number"] {
   padding: 8px 10px;
   border: 1px solid #bdc3c7;
   border-radius: 6px;
@@ -104,14 +102,14 @@
   background-color: #fcfcfc;
 }
 
-.data-table input[type="number"]:focus {
+.dashboard-container .data-table input[type="number"]:focus {
   outline: none;
   border-color: #3498db;
   box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
   background-color: #ffffff;
 }
 
-.btn-small {
+.dashboard-container .btn-small {
   background: none;
   border: none;
   cursor: pointer;
@@ -121,12 +119,12 @@
   border-radius: 4px;
 }
 
-.btn-small:hover {
+.dashboard-container .btn-small:hover {
   transform: scale(1.15);
   background-color: #e8f4f8;
 }
 
-.btn-danger {
+.dashboard-container .btn-danger {
   background-color: #e74c3c;
   color: white;
   border: none;
@@ -138,7 +136,7 @@
   transition: background-color 0.3s ease, transform 0.2s ease;
 }
 
-.btn-danger:hover {
+.dashboard-container .btn-danger:hover {
   background-color: #c0392b;
   transform: translateY(-1px);
 }
