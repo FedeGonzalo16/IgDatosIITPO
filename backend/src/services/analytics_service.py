@@ -3,6 +3,10 @@ from src.config.database import get_cassandra
 class AnalyticsService:
     @staticmethod
     def get_auditoria_estudiante(est_id):
+        """
+        Lee el historial de acciones de un alumno desde Cassandra.
+        La tabla registro_auditoria está particionada por id_estudiante
+        """
         session = get_cassandra()
         if not session:
             return []
@@ -15,8 +19,8 @@ class AnalyticsService:
             for r in rows:
                 fecha = r.fecha_creacion
                 result.append({
-                    "fecha": fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha),
-                    "accion": r.tipo_accion,
+                    "fecha":   fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha),
+                    "accion":  r.tipo_accion,
                     "detalle": r.nota_original
                 })
             return result
@@ -26,6 +30,9 @@ class AnalyticsService:
 
     @staticmethod
     def get_reporte_geo(region):
+        """
+        Devuelve el promedio de notas por institución para una región dada.
+        """
         session = get_cassandra()
         if not session:
             return []

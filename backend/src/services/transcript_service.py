@@ -14,22 +14,20 @@ class TranscriptService:
     @staticmethod
     def generar_certificado_analitico(estudiante_id, carrera_nombre=None, guardar_snapshot=True):
         """
-        Genera el certificado analítico (reporte integral) de un estudiante.
-        - Datos personales desde Mongo
-        - Materias aprobadas desde Neo4j (relación CURSÓ con estado APROBADO)
-        - Promedio histórico y % de avance
-        - Opcional: guarda snapshot en Cassandra como documento oficial emitido
+        Genera el certificado analítico del estudiante cruzando las tres bases de datos:
+        Mongo (datos personales), Neo4j (historial académico) y Cassandra (almacena el snapshot).
+        
+        El snapshot en Cassandra es un documento oficial inmutable: aunque se modifiquen
+        notas o materias después, el certificado emitido en esa fecha queda preservado.
         """
         db = get_mongo()
 
-        # 1. Datos del alumno en Mongo
         estudiante = db.estudiantes.find_one({"_id": ObjectId(estudiante_id)})
         if not estudiante:
             raise ValueError("Estudiante no encontrado")
         estudiante["_id"] = str(estudiante["_id"])
 
-        # 2. En Neo4j: todas las relaciones CURSÓ donde estado = 'APROBADO'
-        materias_aprobadas = []
+        materias_aprobadas  = []
         notas_para_promedio = []
 
         with get_neo4j() as session:
@@ -53,28 +51,26 @@ class TranscriptService:
                     notas_para_promedio.append(nota_num)
 
                 materias_aprobadas.append({
-                    "materia_id": record["materia_id"],
-                    "nombre": record["materia_nombre"],
-                    "codigo": record["materia_codigo"],
-                    "anio": record["anio"],
-                    "nota_final": nota,
+                    "materia_id":  record["materia_id"],
+                    "nombre":      record["materia_nombre"],
+                    "codigo":      record["materia_codigo"],
+                    "anio":        record["anio"],
+                    "nota_final":  nota,
                     "fecha_cierre": str(record["fecha_cierre"]) if record["fecha_cierre"] else None,
                 })
 
-        #Calcular Promedio Histórico
         promedio_historico = None
         if notas_para_promedio:
             promedio_historico = round(sum(notas_para_promedio) / len(notas_para_promedio), 2)
 
-        #Porcentaje de avance de la carrera (si hay carrera y total de materias)
+        # Si se indica la carrera, calculamos cuánto del plan de estudios ya completó el alumno
         total_materias_carrera = None
-        porcentaje_avance = None
+        porcentaje_avance      = None
         if carrera_nombre:
             carrera = db.carreras.find_one({"nombre": carrera_nombre, "metadata.estado": "VIGENTE"})
             if carrera:
                 total_materias_carrera = len(carrera.get("materias_ids", []))
                 if total_materias_carrera and total_materias_carrera > 0:
-                    # Materias aprobadas que pertenecen a la carrera (por id)
                     materias_carrera_ids = {str(oid) for oid in carrera.get("materias_ids", [])}
                     aprobadas_de_carrera = sum(
                         1 for m in materias_aprobadas
@@ -86,27 +82,27 @@ class TranscriptService:
 
         certificado = {
             "estudiante": {
-                "id": estudiante_id,
-                "legajo": estudiante.get("legajo"),
-                "nombre": estudiante.get("nombre"),
+                "id":       estudiante_id,
+                "legajo":   estudiante.get("legajo"),
+                "nombre":   estudiante.get("nombre"),
                 "apellido": estudiante.get("apellido"),
-                "email": estudiante.get("email"),
+                "email":    estudiante.get("email"),
             },
-            "carrera_nombre": carrera_nombre,
-            "materias_aprobadas": materias_aprobadas,
-            "cantidad_aprobadas": len(materias_aprobadas),
-            "promedio_historico": promedio_historico,
+            "carrera_nombre":        carrera_nombre,
+            "materias_aprobadas":    materias_aprobadas,
+            "cantidad_aprobadas":    len(materias_aprobadas),
+            "promedio_historico":    promedio_historico,
             "total_materias_carrera": total_materias_carrera,
-            "porcentaje_avance": porcentaje_avance,
-            "fecha_emision": datetime.utcnow().isoformat(),
+            "porcentaje_avance":     porcentaje_avance,
+            "fecha_emision":         datetime.utcnow().isoformat(),
         }
 
-        #Guardar snapshot en Cassandra como documento oficial emitido
+        # Persistimos el snapshot completo en Cassandra como registro oficial
         if guardar_snapshot:
             session_cass = get_cassandra()
             if session_cass:
                 try:
-                    id_cert = uuid.uuid4()
+                    id_cert       = uuid.uuid4()
                     snapshot_json = json.dumps(certificado, default=str)
                     session_cass.execute("""
                         INSERT INTO certificados_emitidos

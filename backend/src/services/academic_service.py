@@ -3,7 +3,7 @@ from bson import ObjectId
 from datetime import datetime
 
 class AcademicService:
-    # --- INSTITUCIONES ---
+    # Valores permitidos para el nivel educativo de una institución
     NIVELES_VALIDOS = {"SECUNDARIO", "UNIVERSITARIO", "TERCIARIO"}
 
     @staticmethod
@@ -22,6 +22,7 @@ class AcademicService:
         res = db.instituciones.insert_one(doc)
         mongo_id = str(res.inserted_id)
 
+        # El nodo en Neo4j permite luego conectar estudiantes, materias y profesores mediante relaciones
         with get_neo4j() as session:
             session.run("""
                 MERGE (i:Institucion {id_mongo: $id})
@@ -38,6 +39,7 @@ class AcademicService:
         return data
 
     # --- MATERIAS ---
+
     @staticmethod
     def create_materia(data):
         db = get_mongo()
@@ -51,7 +53,7 @@ class AcademicService:
         res = db.materias.insert_one(doc)
         materia_id = str(res.inserted_id)
 
-        # Sync Neo4j: Crear Materia y conectar con Institución
+        # Creamos el nodo Materia y lo conectamos a su institución en el grafo
         with get_neo4j() as session:
             session.run("""
                 MERGE (m:Materia {id_mongo: $mid})
@@ -84,20 +86,17 @@ class AcademicService:
     def update_institucion(uid, data):
         db = get_mongo()
         update_data = {}
-        if 'codigo' in data:
-            update_data['codigo'] = data['codigo']
-        if 'nombre' in data:
-            update_data['nombre'] = data['nombre']
-        if 'pais' in data:
-            update_data['pais'] = data['pais']
-        if 'nivel' in data:
+        if 'codigo' in data: update_data['codigo'] = data['codigo']
+        if 'nombre' in data: update_data['nombre'] = data['nombre']
+        if 'pais'   in data: update_data['pais']   = data['pais']
+        if 'nivel'  in data:
             nivel = data['nivel'].upper()
             if nivel not in AcademicService.NIVELES_VALIDOS:
                 nivel = 'UNIVERSITARIO'
             update_data['nivel'] = nivel
         db.instituciones.update_one({"_id": ObjectId(uid)}, {"$set": update_data})
         
-        # Sync Neo4j
+        # Sincronizamos los cambios al nodo de Neo4j para mantener consistencia
         with get_neo4j() as session:
             session.run("""
                 MATCH (i:Institucion {id_mongo: $id})
@@ -109,6 +108,7 @@ class AcademicService:
     @staticmethod
     def delete_institucion(uid):
         db = get_mongo()
+        # Soft delete: cambiamos el estado para no perder el historial de relaciones
         db.instituciones.update_one({"_id": ObjectId(uid)}, {"$set": {"metadata.estado": "INACTIVA"}})
         return True
 
@@ -125,15 +125,11 @@ class AcademicService:
     def update_materia(uid, data):
         db = get_mongo()
         update_data = {}
-        if 'codigo' in data:
-            update_data['codigo'] = data['codigo']
-        if 'nombre' in data:
-            update_data['nombre'] = data['nombre']
-        if 'nivel' in data:
-            update_data['nivel'] = data['nivel']
+        if 'codigo' in data: update_data['codigo'] = data['codigo']
+        if 'nombre' in data: update_data['nombre'] = data['nombre']
+        if 'nivel'  in data: update_data['nivel']  = data['nivel']
         db.materias.update_one({"_id": ObjectId(uid)}, {"$set": update_data})
         
-        # Sync Neo4j
         with get_neo4j() as session:
             session.run("""
                 MATCH (m:Materia {id_mongo: $id})
@@ -149,7 +145,7 @@ class AcademicService:
 
     @staticmethod
     def get_materias_by_estudiante(est_id):
-        """Obtiene las materias de un estudiante desde Neo4j"""
+        """Obtiene las materias de un estudiante navegando el grafo (CURSANDO y CURSÓ)."""
         materias = []
         with get_neo4j() as session:
             result = session.run("""
@@ -157,7 +153,6 @@ class AcademicService:
                 RETURN DISTINCT m.id_mongo as materia_id, m.nombre as nombre, 
                        m.codigo as codigo, type(r) as tipo_relacion
             """, est_id=est_id)
-            
             for record in result:
                 materias.append({
                     "materia_id": record["materia_id"],
@@ -167,7 +162,8 @@ class AcademicService:
                 })
         return materias
 
-    # CARRERAS (Mongo + Neo4j CONTIENE -> Materia)
+    # --- CARRERAS ---
+
     @staticmethod
     def create_carrera(data):
         """Crea entidad Carrera en Mongo y nodo en Neo4j."""
@@ -175,7 +171,7 @@ class AcademicService:
         doc = {
             "codigo": data.get("codigo", ""),
             "nombre": data["nombre"],
-            "materias_ids": [], 
+            "materias_ids": [],
             "metadata": {"created_at": datetime.utcnow(), "estado": "VIGENTE"}
         }
         res = db.carreras.insert_one(doc)
@@ -211,6 +207,7 @@ class AcademicService:
         """Relaciona una materia a la carrera: (Carrera)-[:CONTIENE]->(Materia) en Neo4j y Mongo."""
         db = get_mongo()
         oid_materia = ObjectId(materia_id)
+        # $addToSet evita duplicados si la materia ya fue agregada
         db.carreras.update_one(
             {"_id": ObjectId(carrera_id), "metadata.estado": "VIGENTE"},
             {"$addToSet": {"materias_ids": oid_materia}}
@@ -225,7 +222,7 @@ class AcademicService:
 
     @staticmethod
     def get_materias_de_carrera(carrera_id):
-        """Materias que CONTIENE la carrera (desde Neo4j o Mongo)."""
+        """Materias que CONTIENE la carrera, consultadas desde Neo4j."""
         with get_neo4j() as session:
             result = session.run("""
                 MATCH (c:Carrera {id_mongo: $carrera_id})-[:CONTIENE]->(m:Materia)
@@ -236,11 +233,10 @@ class AcademicService:
     @staticmethod
     def get_materias_faltantes_para_recibirse(est_id, carrera_id):
         """
-        Compara lo que el alumno CURSÓ (APROBADO) vs lo que la carrera CONTIENE.
-        Devuelve las materias que le faltan para recibirse.
+        Compara materias aprobadas por el alumno vs materias que requiere la carrera.
+        Retorna la diferencia (las que aún le faltan).
         """
         with get_neo4j() as session:
-            # Materias aprobadas del estudiante
             aprobadas = session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(m:Materia)
                 WHERE r.estado = 'APROBADO'
@@ -248,7 +244,6 @@ class AcademicService:
             """, est_id=est_id)
             ids_aprobadas = {r["materia_id"] for r in aprobadas}
 
-            # Materias de la carrera
             de_carrera = session.run("""
                 MATCH (c:Carrera {id_mongo: $carrera_id})-[:CONTIENE]->(m:Materia)
                 RETURN m.id_mongo as materia_id, m.nombre as nombre, m.codigo as codigo

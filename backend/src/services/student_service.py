@@ -7,7 +7,6 @@ class StudentService:
     @staticmethod
     def create(data):
         db = get_mongo()
-        # 1. Mongo (LIMPIO, SIN METADATOS)
         doc = {
             "legajo": data['legajo'],
             "nombre": data['nombre'],
@@ -19,10 +18,10 @@ class StudentService:
         res = db.estudiantes.insert_one(doc)
         mongo_id = str(res.inserted_id)
 
-        # 2. Metadatos EXCLUSIVOS en Cassandra
+        # Estado inicial del estudiante queda registrado en Cassandra por separado
         MetadataService.save_metadata('estudiante', mongo_id, 'ACTIVO')
 
-        # 3. Neo4j Sync
+        # El nodo en Neo4j es necesario para poder construir las relaciones académicas
         with get_neo4j() as session:
             session.run("""
                 MERGE (e:Estudiante {id_mongo: $id}) 
@@ -34,7 +33,7 @@ class StudentService:
     @staticmethod
     def get_all():
         db = get_mongo()
-        # Traemos todos los estudiantes (activos o con estructura vieja)
+        # La condición OR cubre documentos creados antes de que se estandarizara el campo metadata
         students = list(db.estudiantes.find({
             "$or": [
                 {"metadata.estado": "ACTIVO"},
@@ -44,12 +43,12 @@ class StudentService:
             ]
         }))
         
-        # Hacemos el "Join" manual con Neo4j para cada estudiante
+        # La institución de cada estudiante vive en Neo4j (relación PERTENECE_A),
+        # así que necesitamos enriquecer cada documento con un query al grafo.
         with get_neo4j() as session:
             for s in students:
                 s['_id'] = str(s['_id'])
                 try:
-                    # Buscamos su institución actual en el grafo con todos los datos
                     result = session.run("""
                         MATCH (e:Estudiante {id_mongo: $uid})-[:PERTENECE_A]->(i:Institucion)
                         RETURN i.id_mongo AS institucion_id, 
@@ -59,11 +58,11 @@ class StudentService:
                     
                     record = result.single()
                     if record:
-                        s['institucion_id'] = record['institucion_id']
+                        s['institucion_id']     = record['institucion_id']
                         s['institucion_nombre'] = record['institucion_nombre']
                         s['institucion_codigo'] = record['institucion_codigo']
                     else:
-                        s['institucion_id'] = None
+                        s['institucion_id']     = None
                         s['institucion_nombre'] = "Sin Institución"
                 except Exception as e:
                     s['institucion_nombre'] = "Error al cargar"
@@ -77,17 +76,15 @@ class StudentService:
         
         if s: 
             s['_id'] = str(s['_id'])
-            # Ir a Neo4j a buscar a qué institución pertenece actualmente
             try:
                 with get_neo4j() as session:
                     result = session.run("""
                         MATCH (e:Estudiante {id_mongo: $uid})-[:PERTENECE_A]->(i:Institucion)
                         RETURN i.id_mongo AS institucion_id, i.nombre AS institucion_nombre, i.codigo AS institucion_codigo
                     """, uid=uid)
-                    
                     record = result.single()
                     if record:
-                        s['institucion_id'] = record['institucion_id']
+                        s['institucion_id']     = record['institucion_id']
                         s['institucion_nombre'] = record['institucion_nombre']
                         s['institucion_codigo'] = record['institucion_codigo']
             except Exception as e:
@@ -107,6 +104,7 @@ class StudentService:
                     SET e.nombre = $nombre, e.apellido = $apellido
                 """, id=uid, nombre=data.get('nombre', ''), apellido=data.get('apellido', ''))
             if 'institucion_id' in data:
+                # Primero eliminamos la relación anterior (si existe) y luego creamos la nueva
                 inst_id = str(data['institucion_id']).strip()
                 session.run("""
                     MATCH (e:Estudiante {id_mongo: $est_id})
@@ -121,9 +119,8 @@ class StudentService:
     @staticmethod
     def delete(uid):
         db = get_mongo()
-        # Soft Delete
+        # Soft delete en Mongo para preservar historial; hard delete en Neo4j para limpiar el grafo
         db.estudiantes.update_one({"_id": ObjectId(uid)}, {"$set": {"metadata.estado": "INACTIVO", "activo": False}})
-        # Neo4j: Opcional borrar nodo o marcarlo
         with get_neo4j() as session:
             session.run("MATCH (e:Estudiante {id_mongo: $id}) DETACH DELETE e", id=uid)
         return True
@@ -135,7 +132,8 @@ class StudentService:
         if not student:
             return None
         student['_id'] = str(student['_id'])
-        # Join con Neo4j para incluir institución (igual que get_by_id)
+        # Misma lógica que get_by_id: completamos con la institución desde Neo4j
+        # Esto es importante porque el frontend guarda este objeto en localStorage al hacer login
         try:
             with get_neo4j() as session:
                 result = session.run("""
@@ -159,20 +157,25 @@ class StudentService:
     @staticmethod
     def cambiar_institucion(estudiante_id, nueva_institucion_id, regla_conversion_codigo):
         """
-        Traslada al estudiante de institución, busca materias equivalentes, 
-        aplica la conversión de notas y registra la auditoría.
+        Traslada al estudiante de institución, homologa materias aprobadas y
+        convierte las notas según la regla indicada. Es la operación más compleja del sistema.
+        
+        Flujo:
+          1. Leer regla de conversión (MongoDB)
+          2. Buscar materias aprobadas con equivalencias en la nueva institución (Neo4j)
+          3. Aplicar conversión de notas y registrar en Neo4j y MongoDB
+          4. Mover la relación PERTENECE_A al nuevo nodo de institución (Neo4j)
+          5. Auditoría en Cassandra
         """
         db = get_mongo()
         materias_homologadas = []
         
-        # 1. Obtener la regla de conversión desde MongoDB
         regla = db.reglas_conversion.find_one({"codigo_regla": regla_conversion_codigo})
         
         with get_neo4j() as session:
-            # 2. Buscar materias que el alumno aprobó y que tienen equivalencia en la nueva institución
-            # - Solo APROBADO (excluye REPROBADO; recursadas fallidas no se usan)
-            # - Excluye si ya tiene CURSÓ a mat_destino (evita duplicados al cambiar 2 veces)
-            # - Si hay múltiples CURSÓ a la misma materia (recursada aprobada), toma solo la más reciente
+            # Buscamos materias aprobadas que tengan una relación EQUIVALE_A con materias
+            # de la institución destino. Si el alumno recursó y aprobó, tomamos solo la cursada
+            # más reciente (ORDER BY + collect()[0]).
             equiv_query = """
                 MATCH (e:Estudiante {id_mongo: $est_id})-[r_curso:CURSÓ]->(mat_origen:Materia)
                 WHERE r_curso.estado IN ['APROBADO', 'APROBADO (EQUIVALENCIA)']
@@ -188,17 +191,18 @@ class StudentService:
             """
             equivalencias = session.run(equiv_query, est_id=estudiante_id, new_inst_id=nueva_institucion_id).data()
             
-            # Evitar procesar el mismo (origen, destino) dos veces (recursada o duplicados en grafo)
+            # Usamos un set para evitar procesar el mismo par (origen, destino) más de una vez
             procesados = set()
             for eq in equivalencias:
                 clave = (str(eq['id_mat_origen']), str(eq['id_mat_destino']))
                 if clave in procesados:
                     continue
                 procesados.add(clave)
-                nota_origen = eq['nota_origen']
-                nota_convertida = nota_origen  # Fallback por si falla la regla
+                nota_origen    = eq['nota_origen']
+                nota_convertida = nota_origen  # Fallback si la nota no tiene mapeo en la regla
                 
-                # 3. Aplicar conversión matemática/lógica
+                # Intentamos convertir la nota usando el mapeo de la regla.
+                # Soporta comparación numérica y por string (para escalas de letras).
                 if regla and 'mapeo' in regla:
                     for mapeo in regla['mapeo']:
                         coincide = str(mapeo['nota_origen']) == str(nota_origen)
@@ -216,9 +220,8 @@ class StudentService:
                 
                 fecha_conv = datetime.utcnow()
 
-                # 4. Actualizar equivalencia existente o crear una nueva en Neo4j
-                # Si ya existe una relación APROBADO (EQUIVALENCIA) la actualizamos con la nueva conversión.
-                # Si existe una relación APROBADO genuina (cursada en esa institución) no la pisamos.
+                # Si ya existe una equivalencia previa para esta materia destino, la actualizamos.
+                # Si existe una nota genuina (cursó en la nueva institución), no la tocamos.
                 existe_row = session.run("""
                     MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(mat_destino:Materia {id_mongo: $id_mat_destino})
                     RETURN r.estado AS estado
@@ -226,7 +229,7 @@ class StudentService:
 
                 if existe_row:
                     if existe_row['estado'] != 'APROBADO (EQUIVALENCIA)':
-                        continue  # Nota genuina, no sobreescribir
+                        continue
                     session.run("""
                         MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(mat_destino:Materia {id_mongo: $id_mat_destino})
                         WHERE r.estado = 'APROBADO (EQUIVALENCIA)'
@@ -258,7 +261,7 @@ class StudentService:
                          fecha_conv=fecha_conv.isoformat(), regla=regla_conversion_codigo,
                          materia_origen_id=eq['id_mat_origen'], materia_origen_nombre=eq['materia_origen'])
 
-                # 5. Guardar o actualizar la calificación en Mongo (upsert)
+                # Upsert en MongoDB para mantener consistencia con el grafo
                 db.calificaciones.update_one(
                     {
                         "estudiante_id": ObjectId(estudiante_id),
@@ -293,24 +296,22 @@ class StudentService:
                     "nota_convertida": nota_convertida
                 })
 
-            # 6. Mover físicamente al estudiante de institución (BULLETPROOF)
-            # Aseguramos que sean strings limpios sin espacios ocultos
-            est_id_str = str(estudiante_id).strip()
+            # Verificamos existencia de ambos nodos antes de ejecutar el movimiento,
+            # para dar un error claro en lugar de un fallo silencioso.
+            est_id_str     = str(estudiante_id).strip()
             new_inst_id_str = str(nueva_institucion_id).strip()
             
-            # PASO A: Verificar explícitamente que el Estudiante exista en Neo4j
             check_est = session.run("MATCH (e:Estudiante {id_mongo: $id}) RETURN e", id=est_id_str).single()
             if not check_est:
                 raise ValueError(f"Error Neo4j: No se encontró al estudiante con ID '{est_id_str}'")
                 
-            # PASO B: Verificar explícitamente que la Institución exista en Neo4j
             check_inst = session.run("MATCH (i:Institucion {id_mongo: $id}) RETURN i.nombre AS nombre", id=new_inst_id_str).single()
             if not check_inst:
                 raise ValueError(f"Error Neo4j: No se encontró la institución con ID '{new_inst_id_str}'")
                 
             nombre_nueva_inst = check_inst['nombre']
 
-            # PASO C: Ejecutar el borrado y creación garantizados
+            # Borramos PERTENECE_A anterior (OPTIONAL para no fallar si no existía) y creamos la nueva
             res_update = session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})
                 OPTIONAL MATCH (e)-[r:PERTENECE_A]->()
@@ -326,7 +327,7 @@ class StudentService:
                 
             print(f"✅ ÉXITO GRAFO: Estudiante movido a la institución {nombre_nueva_inst}")
 
-        # 7. Asentar en la base de datos de Auditoría (Cassandra)
+        # Cassandra registra el evento del traslado (auditoría inmutable)
         try:
             cass = get_cassandra()
             if cass:

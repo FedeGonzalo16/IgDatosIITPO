@@ -9,9 +9,10 @@ from src.routes.professor_routes import professor_bp
 from src.routes.trajectory_routes import trajectory_bp
 
 app = Flask(__name__)
-# Evitar redirecciones por trailing slash (causan "Redirect not allowed for preflight" en CORS)
+
+# strict_slashes=False evita que Flask redirija /ruta/ → /ruta, lo que rompe preflight CORS
 app.url_map.strict_slashes = False
-# CORS explícito: preflight OPTIONS debe recibir 200 con headers, no redirect
+
 CORS(
     app,
     origins=["http://localhost:3000"],
@@ -20,12 +21,12 @@ CORS(
     supports_credentials=True,
 )
 
-# Registros
-app.register_blueprint(student_bp, url_prefix='/api/v1/estudiantes')
-app.register_blueprint(academic_bp, url_prefix='/api/v1/academic')
-app.register_blueprint(grading_bp, url_prefix='/api/v1/calificaciones')
-app.register_blueprint(reports_bp, url_prefix='/api/v1/reportes')
-app.register_blueprint(professor_bp, url_prefix='/api/v1/profesores')
+# Cada blueprint agrupa un dominio funcional; todos viven bajo /api/v1/
+app.register_blueprint(student_bp,    url_prefix='/api/v1/estudiantes')
+app.register_blueprint(academic_bp,   url_prefix='/api/v1/academic')
+app.register_blueprint(grading_bp,    url_prefix='/api/v1/calificaciones')
+app.register_blueprint(reports_bp,    url_prefix='/api/v1/reportes')
+app.register_blueprint(professor_bp,  url_prefix='/api/v1/profesores')
 app.register_blueprint(trajectory_bp, url_prefix='/api/v1/trayectoria')
 
 # Swagger / OpenAPI documentation - disponible en http://localhost:5000/apidocs
