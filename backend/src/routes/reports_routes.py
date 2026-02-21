@@ -16,110 +16,126 @@ def certificado_analitico(est_id):
         return jsonify(doc)
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @reports_bp.route('/auditoria/<est_id>', methods=['GET'])
 def auditoria(est_id):
-    return jsonify(AnalyticsService.get_auditoria_estudiante(est_id))
+    try:
+        return jsonify(AnalyticsService.get_auditoria_estudiante(est_id))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @reports_bp.route('/region/<region>', methods=['GET'])
 def regional(region):
-    return jsonify(AnalyticsService.get_reporte_geo(region))
+    try:
+        return jsonify(AnalyticsService.get_reporte_geo(region))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @reports_bp.route('/estudiante/<est_id>', methods=['GET'])
 def estudiante_report(est_id):
     """Reporte completo de un estudiante"""
-    db = get_mongo()
-    
-    # Datos del estudiante
-    estudiante = db.estudiantes.find_one({"_id": ObjectId(est_id)})
-    if not estudiante:
-        return jsonify({"error": "Estudiante no encontrado"}), 404
-    
-    estudiante['_id'] = str(estudiante['_id'])
-    
-    # Calificaciones
-    calificaciones = list(db.calificaciones.find({"estudiante_id": ObjectId(est_id)}))
-    for c in calificaciones:
-        c['_id'] = str(c['_id'])
-        c['estudiante_id'] = str(c['estudiante_id'])
-        c['materia_id'] = str(c['materia_id'])
-    
-    # Estadísticas desde Neo4j
-    stats = {
-        "materias_en_curso": 0,
-        "materias_aprobadas": 0,
-        "materias_reprobadas": 0,
-        "promedio_general": 0
-    }
-    
-    with get_neo4j() as session:
-        result = session.run("""
-            MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSANDO|CURSÓ]->(m:Materia)
-            RETURN type(r) as tipo, r.estado as estado, r.final as final
-        """, est_id=est_id)
-        
-        notas_finales = []
-        for record in result:
-            if record["tipo"] == "CURSANDO":
-                stats["materias_en_curso"] += 1
-            elif record["estado"] == "APROBADO":
-                stats["materias_aprobadas"] += 1
-                if record["final"]:
-                    notas_finales.append(float(record["final"]))
-            elif record["estado"] == "REPROBADO":
-                stats["materias_reprobadas"] += 1
-        
-        if notas_finales:
-            stats["promedio_general"] = sum(notas_finales) / len(notas_finales)
-    
-    return jsonify({
-        "estudiante": estudiante,
-        "calificaciones": calificaciones,
-        "estadisticas": stats,
-        "auditoria": AnalyticsService.get_auditoria_estudiante(est_id)
-    })
+    try:
+        db = get_mongo()
+
+        estudiante = db.estudiantes.find_one({"_id": ObjectId(est_id)})
+        if not estudiante:
+            return jsonify({"error": "Estudiante no encontrado"}), 404
+        estudiante['_id'] = str(estudiante['_id'])
+
+        calificaciones = list(db.calificaciones.find({"estudiante_id": ObjectId(est_id)}))
+        for c in calificaciones:
+            c['_id'] = str(c['_id'])
+            c['estudiante_id'] = str(c['estudiante_id'])
+            c['materia_id'] = str(c['materia_id'])
+
+        stats = {
+            "materias_en_curso": 0,
+            "materias_aprobadas": 0,
+            "materias_reprobadas": 0,
+            "promedio_general": 0
+        }
+
+        try:
+            with get_neo4j() as session:
+                result = session.run("""
+                    MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSANDO|CURSÓ]->(m:Materia)
+                    RETURN type(r) as tipo, r.estado as estado, r.final as final
+                """, est_id=est_id)
+                notas_finales = []
+                for record in result:
+                    if record["tipo"] == "CURSANDO":
+                        stats["materias_en_curso"] += 1
+                    elif record["estado"] in ("APROBADO", "APROBADO (EQUIVALENCIA)"):
+                        stats["materias_aprobadas"] += 1
+                        if record["final"] is not None:
+                            try:
+                                notas_finales.append(float(record["final"]))
+                            except (TypeError, ValueError):
+                                pass
+                    elif record["estado"] == "REPROBADO":
+                        stats["materias_reprobadas"] += 1
+                if notas_finales:
+                    stats["promedio_general"] = round(sum(notas_finales) / len(notas_finales), 2)
+        except Exception as neo_err:
+            print(f"[WARNING] Neo4j error en reporte estudiante: {neo_err}")
+
+        auditoria_data = AnalyticsService.get_auditoria_estudiante(est_id)
+
+        return jsonify({
+            "estudiante": estudiante,
+            "calificaciones": calificaciones,
+            "estadisticas": stats,
+            "auditoria": auditoria_data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @reports_bp.route('/institucion/<inst_id>', methods=['GET'])
 def institucion_report(inst_id):
     """Reporte de una institución"""
-    db = get_mongo()
-    
-    institucion = db.instituciones.find_one({"_id": ObjectId(inst_id)})
-    if not institucion:
-        return jsonify({"error": "Institución no encontrada"}), 404
-    
-    institucion['_id'] = str(institucion['_id'])
-    
-    # Materias de la institución
-    materias = list(db.materias.find({"institucion_id": ObjectId(inst_id)}))
-    for m in materias:
-        m['_id'] = str(m['_id'])
-        m['institucion_id'] = str(m['institucion_id'])
-    
-    # Estadísticas desde Neo4j
-    stats = {
-        "total_estudiantes": 0,
-        "total_materias": len(materias),
-        "materias_activas": 0
-    }
-    
-    with get_neo4j() as session:
-        result = session.run("""
-            MATCH (i:Institucion {id_mongo: $inst_id})<-[:PERTENECE_A]-(m:Materia)
-            OPTIONAL MATCH (e:Estudiante)-[:CURSANDO|CURSÓ]->(m)
-            RETURN count(DISTINCT e) as total_estudiantes, count(DISTINCT m) as materias_activas
-        """, inst_id=inst_id)
-        
-        record = result.single()
-        if record:
-            stats["total_estudiantes"] = record["total_estudiantes"] or 0
-            stats["materias_activas"] = record["materias_activas"] or 0
-    
-    return jsonify({
-        "institucion": institucion,
-        "materias": materias,
-        "estadisticas": stats
-    })
+    try:
+        db = get_mongo()
+
+        institucion = db.instituciones.find_one({"_id": ObjectId(inst_id)})
+        if not institucion:
+            return jsonify({"error": "Institución no encontrada"}), 404
+        institucion['_id'] = str(institucion['_id'])
+
+        materias = list(db.materias.find({"institucion_id": ObjectId(inst_id)}))
+        for m in materias:
+            m['_id'] = str(m['_id'])
+            m['institucion_id'] = str(m['institucion_id'])
+
+        stats = {
+            "total_estudiantes": 0,
+            "total_materias": len(materias),
+            "materias_activas": 0
+        }
+
+        try:
+            with get_neo4j() as session:
+                result = session.run("""
+                    MATCH (i:Institucion {id_mongo: $inst_id})<-[:PERTENECE_A]-(m:Materia)
+                    OPTIONAL MATCH (e:Estudiante)-[:CURSANDO|CURSÓ]->(m)
+                    RETURN count(DISTINCT e) as total_estudiantes,
+                           count(DISTINCT m) as materias_activas
+                """, inst_id=inst_id)
+                record = result.single()
+                if record:
+                    stats["total_estudiantes"] = record["total_estudiantes"] or 0
+                    stats["materias_activas"] = record["materias_activas"] or 0
+        except Exception as neo_err:
+            print(f"[WARNING] Neo4j error en reporte institución: {neo_err}")
+
+        return jsonify({
+            "institucion": institucion,
+            "materias": materias,
+            "estadisticas": stats
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @reports_bp.route('/calificaciones', methods=['GET'])
 def calificaciones_stats():

@@ -67,6 +67,13 @@ const ReportesPage = ({ user, onLogout }) => {
     load();
   }, []);
 
+  const extractError = (err) => {
+    if (err.response?.data?.error) return err.response.data.error;
+    if (err.response?.status) return `Error del servidor (${err.response.status})`;
+    if (err.message === 'Network Error') return 'No se pudo conectar con el servidor. Verificá que el backend esté corriendo.';
+    return err.message || 'Error desconocido';
+  };
+
   const handleReporteEstudiante = async () => {
     if (!reportEstId) {
       alert('Selecciona un estudiante.');
@@ -78,7 +85,7 @@ const ReportesPage = ({ user, onLogout }) => {
       const res = await reportService.getStudentReport(reportEstId);
       setReportEstResult(res.data);
     } catch (err) {
-      setReportEstResult({ error: err.response?.data?.error || err.message });
+      setReportEstResult({ error: extractError(err) });
     } finally {
       setReportEstLoading(false);
     }
@@ -93,9 +100,9 @@ const ReportesPage = ({ user, onLogout }) => {
     setAuditResult(null);
     try {
       const res = await reportService.getAuditoria(auditEstId);
-      setAuditResult(res.data);
+      setAuditResult(Array.isArray(res.data) ? res.data : res.data);
     } catch (err) {
-      setAuditResult({ error: err.response?.data?.error || err.message });
+      setAuditResult({ error: extractError(err) });
     } finally {
       setAuditLoading(false);
     }
@@ -112,7 +119,7 @@ const ReportesPage = ({ user, onLogout }) => {
       const res = await reportService.getInstitutionReport(reportInstId);
       setReportInstResult(res.data);
     } catch (err) {
-      setReportInstResult({ error: err.response?.data?.error || err.message });
+      setReportInstResult({ error: extractError(err) });
     } finally {
       setReportInstLoading(false);
     }
@@ -205,6 +212,23 @@ const ReportesPage = ({ user, onLogout }) => {
                   <div className="reportes-result">
                     {auditResult.error ? (
                       <p className="result-error">{auditResult.error}</p>
+                    ) : Array.isArray(auditResult) && auditResult.length === 0 ? (
+                      <p className="no-audit">No hay registros de auditoría para este estudiante.</p>
+                    ) : Array.isArray(auditResult) ? (
+                      <table className="audit-table">
+                        <thead>
+                          <tr><th>Fecha</th><th>Acción</th><th>Detalle</th></tr>
+                        </thead>
+                        <tbody>
+                          {auditResult.map((row, i) => (
+                            <tr key={i}>
+                              <td>{row.fecha ? new Date(row.fecha).toLocaleString('es-ES') : '—'}</td>
+                              <td><strong>{row.accion}</strong></td>
+                              <td>{row.detalle || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     ) : (
                       <pre className="audit-pre">{JSON.stringify(auditResult, null, 2)}</pre>
                     )}

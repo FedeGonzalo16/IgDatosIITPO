@@ -230,6 +230,38 @@
   color: #667eea;
 }
 
+.no-audit {
+  color: #888;
+  margin: 0;
+  font-size: 0.93rem;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.audit-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.audit-table th,
+.audit-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.audit-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.audit-table tbody tr:hover {
+  background: #f0f1fd;
+}
+
 .spin {
   animation: spin 0.8s linear infinite;
 }

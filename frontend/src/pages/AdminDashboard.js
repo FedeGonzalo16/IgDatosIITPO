@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { Users, BarChart3, Search, Filter, UserCheck, Plus, X, RefreshCw } from 'lucide-react';
-import { studentService, subjectService, gradeService, institutionService, teacherService, conversionService, gradingOperations } from '../services/api';
+import { studentService, subjectService, gradeService, institutionService, teacherService, conversionService, gradingOperations, reportService } from '../services/api';
 import './AdminDashboard.css';
 
 const AdminDashboard = ({ user, onLogout }) => {
@@ -41,7 +41,7 @@ const AdminDashboard = ({ user, onLogout }) => {
 
   useEffect(() => {
     loadData();
-    if (activeTab === 'subjects' || activeTab === 'institutions') {
+    if (activeTab === 'subjects' || activeTab === 'institutions' || activeTab === 'students') {
       loadInstitutions();
     }
     if (activeTab === 'grades') {
@@ -101,6 +101,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       let responseData = [];
 
       if (activeTab === 'students') {
+        // El backend ya resuelve institucion_nombre vía Neo4j en get_all()
         const response = await studentService.getAll();
         responseData = response.data.map(s => ({
           id: s._id,
@@ -108,69 +109,98 @@ const AdminDashboard = ({ user, onLogout }) => {
           nombre: `${s.nombre} ${s.apellido}`,
           email: s.email,
           estado: s.metadata?.estado || 'ACTIVO',
-          institucion: 'N/A',
-          promedio: 0
+          institucion: s.institucion_nombre || 'Sin institución',
+          promedio: '—'
         }));
+
       } else if (activeTab === 'subjects') {
-        const response = await subjectService.getAll();
-        responseData = response.data.map(m => ({
+        // Cargamos materias e instituciones en paralelo para resolver el nombre
+        const [subjectsRes, instsRes] = await Promise.all([
+          subjectService.getAll(),
+          institutionService.getAll()
+        ]);
+        const instMap = {};
+        (instsRes.data || []).forEach(i => { instMap[i._id] = i.nombre; });
+        responseData = subjectsRes.data.map(m => ({
           id: m._id,
           codigo: m.codigo,
           nombre: m.nombre,
-          nivel: m.nivel,
-          institucion: m.institucion_id || 'N/A',
-          estudiantes_inscritos: 0,
-          aprobados: 0,
-          reprobados: 0
+          nivel: m.nivel || '—',
+          institucion: instMap[m.institucion_id] || '—'
         }));
+
       } else if (activeTab === 'grades') {
         const response = await gradeService.getAll();
-        responseData = response.data.map(g => ({
+        const grades = response.data.map(g => ({
           id: g._id,
           estudiante_id: g.estudiante_id,
           materia_id: g.materia_id,
-          nota_original: g.valor_original?.nota || 'N/A',
-          tipo: g.valor_original?.tipo || 'N/A',
-          fecha: g.created_at ? new Date(g.created_at).toISOString().split('T')[0] : 'N/A',
-          estudiante: 'Cargando...',
-          materia: 'Cargando...'
+          nota_original: g.valor_original?.nota ?? '—',
+          tipo: g.valor_original?.tipo ?? '—',
+          fecha: g.created_at ? new Date(g.created_at).toISOString().split('T')[0] : '—',
+          estudiante: '—',
+          materia: '—'
         }));
-        
-        // Enriquecer con datos de estudiantes y materias
-        for (let grade of responseData) {
-          try {
-            const [studentRes, subjectRes] = await Promise.all([
-              studentService.getById(grade.estudiante_id).catch(() => null),
-              subjectService.getById(grade.materia_id).catch(() => null)
-            ]);
-            if (studentRes?.data) {
-              grade.estudiante = `${studentRes.data.nombre} ${studentRes.data.apellido}`;
-            }
-            if (subjectRes?.data) {
-              grade.materia = subjectRes.data.nombre;
-            }
-          } catch (e) {
-            console.error('Error loading details:', e);
-          }
-        }
+
+        // Enriquecimiento paralelo: IDs únicos → un fetch por ID único
+        const uniqueStudentIds = [...new Set(grades.map(g => g.estudiante_id).filter(Boolean))];
+        const uniqueSubjectIds = [...new Set(grades.map(g => g.materia_id).filter(Boolean))];
+
+        const [studentResults, subjectResults] = await Promise.all([
+          Promise.all(uniqueStudentIds.map(id => studentService.getById(id).catch(() => null))),
+          Promise.all(uniqueSubjectIds.map(id => subjectService.getById(id).catch(() => null)))
+        ]);
+
+        const studentMap = {};
+        uniqueStudentIds.forEach((id, i) => {
+          const d = studentResults[i]?.data;
+          if (d) studentMap[id] = `${d.nombre} ${d.apellido}`;
+        });
+        const subjectMap = {};
+        uniqueSubjectIds.forEach((id, i) => {
+          const d = subjectResults[i]?.data;
+          if (d) subjectMap[id] = d.nombre;
+        });
+
+        responseData = grades.map(g => ({
+          ...g,
+          estudiante: studentMap[g.estudiante_id] || '—',
+          materia: subjectMap[g.materia_id] || '—'
+        }));
+
       } else if (activeTab === 'institutions') {
         const response = await institutionService.getAll();
-        responseData = response.data.map(i => ({
+        const nivelLabel = { SECUNDARIO: 'Secundario', UNIVERSITARIO: 'Universitario', TERCIARIO: 'Terciario' };
+        const baseData = response.data.map(i => ({
           id: i._id,
           codigo: i.codigo,
           nombre: i.nombre,
-          nivel_educativo: 'N/A',
+          nivel_educativo: nivelLabel[i.nivel] || i.nivel || 'No especificado',
           ubicacion: i.pais,
-          estudiantes: 0,
-          materias: 0
+          estudiantes: '—',
+          materias: '—'
         }));
+
+        // Cargamos estadísticas reales de cada institución en paralelo
+        const reports = await Promise.all(
+          baseData.map(inst => reportService.getInstitutionReport(inst.id).catch(() => null))
+        );
+        responseData = baseData.map((inst, idx) => {
+          const stats = reports[idx]?.data?.estadisticas;
+          return {
+            ...inst,
+            estudiantes: stats != null ? stats.total_estudiantes : '—',
+            materias: stats != null ? stats.total_materias : '—'
+          };
+        });
+
       } else if (activeTab === 'teachers') {
         const response = await teacherService.getAll();
         responseData = response.data.map(t => ({
           id: t._id,
           legajo: t.legajo_docente,
           nombre: `${t.nombre} ${t.apellido}`,
-          especialidad: t.especialidad || 'N/A'
+          especialidad: t.especialidad || '—'
         }));
       }
 
@@ -184,8 +214,8 @@ const AdminDashboard = ({ user, onLogout }) => {
 
       // Aplicar búsqueda
       if (searchTerm) {
-        responseData = responseData.filter(item => 
-          Object.values(item).some(val => 
+        responseData = responseData.filter(item =>
+          Object.values(item).some(val =>
             String(val).toLowerCase().includes(searchTerm.toLowerCase())
           )
         );
@@ -202,6 +232,15 @@ const AdminDashboard = ({ user, onLogout }) => {
 
   const renderStudentsTable = () => (
     <div className="table-container">
+      <div className="table-header">
+        <h3>Estudiantes</h3>
+        <button className="btn-add" onClick={() => {
+          setCreateFormData({ legajo: '', nombre: '', apellido: '', email: '', institucion_id: '' });
+          setShowCreateModal(true);
+        }}>
+          <Plus size={16} /> Agregar Estudiante
+        </button>
+      </div>
       <table className="admin-table">
         <thead>
           <tr>
@@ -228,6 +267,25 @@ const AdminDashboard = ({ user, onLogout }) => {
       </table>
     </div>
   );
+
+  const handleCreateStudent = async (e) => {
+    e.preventDefault();
+    try {
+      const { legajo, nombre, apellido, email, institucion_id } = createFormData;
+      const res = await studentService.create({ legajo, nombre, apellido, email: email || '' });
+      const newId = res.data?.id;
+      if (newId && institucion_id) {
+        await studentService.update(newId, { institucion_id });
+      }
+      setShowCreateModal(false);
+      setCreateFormData({});
+      loadData();
+      loadStudentsAndSubjects();
+      alert('Estudiante creado exitosamente');
+    } catch (error) {
+      alert('Error al crear estudiante: ' + (error.response?.data?.error || error.message));
+    }
+  };
 
   const handleCreateSubject = async (e) => {
     e.preventDefault();
@@ -292,28 +350,17 @@ const AdminDashboard = ({ user, onLogout }) => {
             <th>Nombre</th>
             <th>Nivel</th>
             <th>Institución</th>
-            <th>Inscritos</th>
-            <th>Aprobados</th>
-            <th>Reprobados</th>
-            <th>% Aprobación</th>
           </tr>
         </thead>
         <tbody>
-          {data.map(subject => {
-            const approvalRate = ((subject.aprobados / subject.estudiantes_inscritos) * 100).toFixed(1);
-            return (
-              <tr key={subject.id}>
-                <td><strong>{subject.codigo}</strong></td>
-                <td>{subject.nombre}</td>
-                <td>{subject.nivel}</td>
-                <td>{subject.institucion}</td>
-                <td>{subject.estudiantes_inscritos}</td>
-                <td className="success">{subject.aprobados}</td>
-                <td className="danger">{subject.reprobados}</td>
-                <td><strong>{approvalRate}%</strong></td>
-              </tr>
-            );
-          })}
+          {data.map(subject => (
+            <tr key={subject.id}>
+              <td><strong>{subject.codigo}</strong></td>
+              <td>{subject.nombre}</td>
+              <td>{subject.nivel}</td>
+              <td>{subject.institucion}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -478,7 +525,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <th>Materia</th>
               <th>Nota</th>
               <th>Tipo</th>
-              <th>Profesor</th>
               <th>Fecha</th>
             </tr>
           </thead>
@@ -489,8 +535,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <td>{grade.materia}</td>
                 <td><strong>{grade.nota_original}</strong></td>
                 <td>{grade.tipo}</td>
-                <td>{grade.profesor}</td>
-                <td>{new Date(grade.fecha).toLocaleDateString('es-ES')}</td>
+                <td>{grade.fecha !== '—' ? new Date(grade.fecha).toLocaleDateString('es-ES') : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -504,7 +549,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       <div className="table-header">
         <h3>Instituciones</h3>
         <button className="btn-add" onClick={() => {
-          setCreateFormData({ codigo: '', nombre: '', pais: 'AR' });
+          setCreateFormData({ codigo: '', nombre: '', nivel: 'UNIVERSITARIO', pais: 'AR' });
           setShowCreateModal(true);
         }}>
           <Plus size={16} /> Agregar Institución
@@ -526,7 +571,11 @@ const AdminDashboard = ({ user, onLogout }) => {
             <tr key={inst.id}>
               <td><strong>{inst.codigo}</strong></td>
               <td>{inst.nombre}</td>
-              <td>{inst.nivel_educativo}</td>
+              <td>
+                <span className={`nivel-badge ${(inst.nivel_educativo || '').toLowerCase()}`}>
+                  {inst.nivel_educativo || '—'}
+                </span>
+              </td>
               <td>{inst.ubicacion}</td>
               <td>{inst.estudiantes}</td>
               <td>{inst.materias}</td>
@@ -834,19 +883,76 @@ const AdminDashboard = ({ user, onLogout }) => {
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                   <h2>
-                    {activeTab === 'subjects' ? 'Crear Nueva Materia' : 
-                     activeTab === 'institutions' ? 'Crear Nueva Institución' : 
-                     activeTab === 'teachers' ? 'Crear Nuevo Profesor' : 'Crear Nuevo'}
+                    {activeTab === 'students'     ? 'Crear Nuevo Estudiante' :
+                     activeTab === 'subjects'     ? 'Crear Nueva Materia' :
+                     activeTab === 'institutions' ? 'Crear Nueva Institución' :
+                     activeTab === 'teachers'     ? 'Crear Nuevo Profesor' : 'Crear Nuevo'}
                   </h2>
                   <button className="modal-close" onClick={() => setShowCreateModal(false)}>
                     <X size={24} />
                   </button>
                 </div>
                 <form onSubmit={
-                  activeTab === 'subjects' ? handleCreateSubject : 
-                  activeTab === 'institutions' ? handleCreateInstitution : 
-                  activeTab === 'teachers' ? handleCreateTeacher : (e) => e.preventDefault()
+                  activeTab === 'students'     ? handleCreateStudent :
+                  activeTab === 'subjects'     ? handleCreateSubject :
+                  activeTab === 'institutions' ? handleCreateInstitution :
+                  activeTab === 'teachers'     ? handleCreateTeacher : (e) => e.preventDefault()
                 }>
+                  {activeTab === 'students' && (
+                    <>
+                      <div className="form-group">
+                        <label>Legajo *</label>
+                        <input
+                          type="text"
+                          value={createFormData.legajo || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, legajo: e.target.value})}
+                          placeholder="Ej: EST-001"
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Nombre *</label>
+                        <input
+                          type="text"
+                          value={createFormData.nombre || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, nombre: e.target.value})}
+                          placeholder="Ej: Juan"
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Apellido *</label>
+                        <input
+                          type="text"
+                          value={createFormData.apellido || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, apellido: e.target.value})}
+                          placeholder="Ej: Pérez"
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Email</label>
+                        <input
+                          type="email"
+                          value={createFormData.email || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, email: e.target.value})}
+                          placeholder="Ej: juan.perez@email.com"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Institución</label>
+                        <select
+                          value={createFormData.institucion_id || ''}
+                          onChange={(e) => setCreateFormData({...createFormData, institucion_id: e.target.value})}
+                        >
+                          <option value="">Sin institución</option>
+                          {institutions.map(inst => (
+                            <option key={inst._id} value={inst._id}>{inst.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                   {activeTab === 'subjects' && (
                     <>
                       <div className="form-group">
@@ -916,6 +1022,18 @@ const AdminDashboard = ({ user, onLogout }) => {
                           placeholder="Ej: Colegio Nacional"
                           required
                         />
+                      </div>
+                      <div className="form-group">
+                        <label>Nivel educativo *</label>
+                        <select
+                          value={createFormData.nivel || 'UNIVERSITARIO'}
+                          onChange={(e) => setCreateFormData({...createFormData, nivel: e.target.value})}
+                          required
+                        >
+                          <option value="SECUNDARIO">Secundario</option>
+                          <option value="UNIVERSITARIO">Universitario</option>
+                          <option value="TERCIARIO">Terciario</option>
+                        </select>
                       </div>
                       <div className="form-group">
                         <label>País</label>

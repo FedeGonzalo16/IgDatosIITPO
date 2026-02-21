@@ -4,13 +4,19 @@ from datetime import datetime
 
 class AcademicService:
     # --- INSTITUCIONES ---
+    NIVELES_VALIDOS = {"SECUNDARIO", "UNIVERSITARIO", "TERCIARIO"}
+
     @staticmethod
     def create_institucion(data):
         db = get_mongo()
+        nivel = data.get('nivel', 'UNIVERSITARIO').upper()
+        if nivel not in AcademicService.NIVELES_VALIDOS:
+            nivel = 'UNIVERSITARIO'
         doc = {
             "codigo": data['codigo'],
             "nombre": data['nombre'],
             "pais": data['pais'],
+            "nivel": nivel,
             "metadata": {"created_at": datetime.utcnow(), "estado": "ACTIVA"}
         }
         res = db.instituciones.insert_one(doc)
@@ -19,8 +25,9 @@ class AcademicService:
         with get_neo4j() as session:
             session.run("""
                 MERGE (i:Institucion {id_mongo: $id})
-                SET i.codigo = $codigo, i.nombre = $nombre, i.pais = $pais
-            """, id=mongo_id, **data)
+                SET i.codigo = $codigo, i.nombre = $nombre, i.pais = $pais, i.nivel = $nivel
+            """, id=mongo_id, codigo=data['codigo'], nombre=data['nombre'],
+                pais=data['pais'], nivel=nivel)
         return mongo_id
 
     @staticmethod
@@ -83,14 +90,20 @@ class AcademicService:
             update_data['nombre'] = data['nombre']
         if 'pais' in data:
             update_data['pais'] = data['pais']
+        if 'nivel' in data:
+            nivel = data['nivel'].upper()
+            if nivel not in AcademicService.NIVELES_VALIDOS:
+                nivel = 'UNIVERSITARIO'
+            update_data['nivel'] = nivel
         db.instituciones.update_one({"_id": ObjectId(uid)}, {"$set": update_data})
         
         # Sync Neo4j
         with get_neo4j() as session:
             session.run("""
                 MATCH (i:Institucion {id_mongo: $id})
-                SET i.codigo = $codigo, i.nombre = $nombre, i.pais = $pais
-            """, id=uid, codigo=data.get('codigo', ''), nombre=data.get('nombre', ''), pais=data.get('pais', ''))
+                SET i.codigo = $codigo, i.nombre = $nombre, i.pais = $pais, i.nivel = $nivel
+            """, id=uid, codigo=data.get('codigo', ''), nombre=data.get('nombre', ''),
+                pais=data.get('pais', ''), nivel=update_data.get('nivel', ''))
         return True
 
     @staticmethod

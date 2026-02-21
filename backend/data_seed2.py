@@ -109,17 +109,16 @@ def run_seed():
     # 1. INSTITUCIONES (Sistemas Educativos)
     # ==========================================
     log("1", "Creando Instituciones (AR, US, UK, DE)...")
-    inst_ar = post("academic/instituciones", {"codigo": "UBA", "nombre": "Universidad de Buenos Aires", "pais": "AR", "sistema_calificacion": "Numerico 1-10"})['id']
-    inst_us = post("academic/instituciones", {"codigo": "MIT", "nombre": "Mass. Institute of Technology", "pais": "US", "sistema_calificacion": "Letras A-F / GPA"})['id']
-    inst_uk = post("academic/instituciones", {"codigo": "OXF", "nombre": "Oxford University", "pais": "UK", "sistema_calificacion": "Letras A*-F"})['id']
-    inst_de = post("academic/instituciones", {"codigo": "TUM", "nombre": "Technical University of Munich", "pais": "DE", "sistema_calificacion": "Inverso 1.0-6.0"})['id']
+    inst_ar = post("academic/instituciones", {"codigo": "UBA", "nombre": "Universidad de Buenos Aires", "pais": "AR", "sistema_calificacion": "Numerico 1-10", "nivel": "Universitario"})['id']
+    inst_us = post("academic/instituciones", {"codigo": "MIT", "nombre": "Mass. Institute of Technology", "pais": "US", "sistema_calificacion": "Letras A-F / GPA", "nivel": "Universitario"})['id']
+    inst_uk = post("academic/instituciones", {"codigo": "OXF", "nombre": "Oxford University", "pais": "UK", "sistema_calificacion": "Letras A*-F", "nivel": "Universitario"})['id']
+    inst_de = post("academic/instituciones", {"codigo": "TUM", "nombre": "Technical University of Munich", "pais": "DE", "sistema_calificacion": "Inverso 1.0-6.0", "nivel": "Universitario"})['id']
 
     # ==========================================
     # 2. ADMIN DIRECTO EN BD Y PROFESORES
     # ==========================================
     log("2", "Creando Admin (Nodo Propio) y Profesores...")
     
-    # Creando Admin directo para evitar que sea Estudiante
     db = get_mongo()
     res_admin = db.administradores.insert_one({
         "legajo": "ADMIN-001", "nombre": "Admin", "apellido": "Global", 
@@ -131,7 +130,6 @@ def run_seed():
     print("   ✅ Admin creado exitosamente como nodo (:Admin).")
 
     prof_ar = post("profesores/", {"legajo_docente": "P-AR1", "nombre": "Jorge", "apellido": "Borges", "especialidad": "Bases de Datos", "email": "jorge@mail.com", "password": "123456", "rol": "profesor"})['id']
-    
     prof_us = post("profesores/", {"legajo_docente": "P-US1", "nombre": "Alan", "apellido": "Turing", "especialidad": "Computer Science", "email": "alan@mail.com", "password": "123456", "rol": "profesor"})['id']
 
     # ==========================================
@@ -151,13 +149,13 @@ def run_seed():
     # 4. ESTUDIANTES (Con propiedades y relación PERTENECE_A)
     # ==========================================
     log("4", "Creando Estudiantes y vinculando a Instituciones...")
-    est_fede = post("estudiantes/", {"legajo": "L-111", "nombre": "Federico", "apellido": "Recursante", "email": "fede@mail.com", "pais": "AR"})['id']
+    est_fede = post("estudiantes/", {"legajo": "L-111", "nombre": "Federico", "apellido": "Recursante", "email": "fede@mail.com", "pais": "AR", "password": "123456"})['id']
     vincular_estudiante_neo4j(est_fede, inst_ar, "Federico", "Recursante")
 
-    est_ana = post("estudiantes/", {"legajo": "L-222", "nombre": "Ana", "apellido": "Aprevio", "email": "ana@mail.com", "pais": "AR"})['id']
+    est_ana = post("estudiantes/", {"legajo": "L-222", "nombre": "Ana", "apellido": "Aprevio", "email": "ana@mail.com", "pais": "AR", "password": "123456"})['id']
     vincular_estudiante_neo4j(est_ana, inst_ar, "Ana", "Aprevio")
 
-    est_john = post("estudiantes/", {"legajo": "L-333", "nombre": "John", "apellido": "Exchange", "email": "john@mail.com", "pais": "US"})['id']
+    est_john = post("estudiantes/", {"legajo": "L-333", "nombre": "John", "apellido": "Exchange", "email": "john@mail.com", "pais": "US", "password": "123456"})['id']
     vincular_estudiante_neo4j(est_john, inst_us, "John", "Exchange")
     print("   ✅ Todos los estudiantes creados, con propiedades completas y vinculados a sus instituciones.")
 
@@ -167,7 +165,6 @@ def run_seed():
     log("4b", "Creando Reglas de Conversión (AR, US, UK, DE — todas las combinaciones)...")
 
     reglas_conversion = [
-        # --- ARGENTINA (1-10) ---
         {"codigo_regla": "AR_TO_UK", "nombre": "Argentina → Reino Unido (GCSE/A-Level)", "mapeo": [
             {"nota_origen": 10, "nota_destino": "A*"}, {"nota_origen": 9, "nota_destino": "A"},
             {"nota_origen": 8, "nota_destino": "B"}, {"nota_origen": 7, "nota_destino": "C"},
@@ -196,7 +193,6 @@ def run_seed():
             {"nota_origen": 4, "nota_destino": 6.0}, {"nota_origen": 3, "nota_destino": 6.0},
             {"nota_origen": 2, "nota_destino": 6.0}, {"nota_origen": 1, "nota_destino": 6.0},
         ]},
-        # --- REINO UNIDO (A*-F) ---
         {"codigo_regla": "UK_TO_AR", "nombre": "Reino Unido → Argentina", "mapeo": [
             {"nota_origen": "A*", "nota_destino": 10}, {"nota_origen": "A", "nota_destino": 9},
             {"nota_origen": "B", "nota_destino": 8}, {"nota_origen": "C", "nota_destino": 7},
@@ -215,7 +211,6 @@ def run_seed():
             {"nota_origen": "D", "nota_destino": 4.0}, {"nota_origen": "E", "nota_destino": 5.0},
             {"nota_origen": "F", "nota_destino": 6.0},
         ]},
-        # --- ESTADOS UNIDOS (Letras A-F) ---
         {"codigo_regla": "US_TO_AR", "nombre": "Estados Unidos (Letras) → Argentina", "mapeo": [
             {"nota_origen": "A", "nota_destino": 10}, {"nota_origen": "A+", "nota_destino": 10}, {"nota_origen": "A-", "nota_destino": 9},
             {"nota_origen": "B", "nota_destino": 8}, {"nota_origen": "B+", "nota_destino": 8}, {"nota_origen": "B-", "nota_destino": 7},
@@ -241,7 +236,6 @@ def run_seed():
             {"nota_origen": 1.0, "nota_destino": 4}, {"nota_origen": 0.5, "nota_destino": 4},
             {"nota_origen": 0.0, "nota_destino": 4},
         ]},
-        # --- ALEMANIA (1.0-6.0, inversa) ---
         {"codigo_regla": "DE_TO_AR", "nombre": "Alemania → Argentina", "mapeo": [
             {"nota_origen": 1.0, "nota_destino": 10}, {"nota_origen": 1.3, "nota_destino": 9}, {"nota_origen": 1.7, "nota_destino": 9},
             {"nota_origen": 2.0, "nota_destino": 8}, {"nota_origen": 2.3, "nota_destino": 8}, {"nota_origen": 2.7, "nota_destino": 7},
@@ -298,15 +292,14 @@ def run_seed():
     print("   👉 John se muda a Argentina y rinde equivalencia")
     sync_curso_relation(est_john, mat_bd_ar, "FINAL", 9, "2025") 
 
+    # --- AGREGADO PARA PROBAR DASHBOARD DOCENTE ---
     print("   👉 Lucas se inscribe en Bases de Datos AR (solo parcial, cursada ACTIVA)")
-    est_lucas = post("estudiantes/", {"legajo": "L-999", "nombre": "Lucas", "apellido": "Activo", "email": "lucas@mail.com", "pais": "AR"})['id']
+    est_lucas = post("estudiantes/", {"legajo": "L-999", "nombre": "Lucas", "apellido": "Activo", "email": "lucas@mail.com", "pais": "AR", "password": "123456"})['id']
     vincular_estudiante_neo4j(est_lucas, inst_ar, "Lucas", "Activo")
-    
-    # Solo le cargamos el Parcial 1. Esto creará la relación CURSANDO y la mantendrá abierta.
     sync_curso_relation(est_lucas, mat_bd_ar, "PARCIAL_1", 8, "2026")
     
     print("   👉 Emma se inscribe en Database Systems US (cursada ACTIVA)")
-    est_emma = post("estudiantes/", {"legajo": "L-888", "nombre": "Emma", "apellido": "Current", "email": "emma@mail.com", "pais": "US"})['id']
+    est_emma = post("estudiantes/", {"legajo": "L-888", "nombre": "Emma", "apellido": "Current", "email": "emma@mail.com", "pais": "US", "password": "123456"})['id']
     vincular_estudiante_neo4j(est_emma, inst_us, "Emma", "Current")
     sync_curso_relation(est_emma, mat_bd_us, "PARCIAL_1", "B", "2026")
 
