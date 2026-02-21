@@ -130,8 +130,9 @@ def run_seed():
         session.run("CREATE (a:Admin {id_mongo: $id, nombre: 'Admin', apellido: 'Global', activo: true})", id=admin_id)
     print("   ✅ Admin creado exitosamente como nodo (:Admin).")
 
-    prof_ar = post("profesores/", {"legajo_docente": "P-AR1", "nombre": "Jorge", "apellido": "Borges", "especialidad": "Bases de Datos"})['id']
-    prof_us = post("profesores/", {"legajo_docente": "P-US1", "nombre": "Alan", "apellido": "Turing", "especialidad": "Computer Science"})['id']
+    prof_ar = post("profesores/", {"legajo_docente": "P-AR1", "nombre": "Jorge", "apellido": "Borges", "especialidad": "Bases de Datos", "email": "jorge@mail.com", "password": "123456", "rol": "profesor"})['id']
+    
+    prof_us = post("profesores/", {"legajo_docente": "P-US1", "nombre": "Alan", "apellido": "Turing", "especialidad": "Computer Science", "email": "alan@mail.com", "password": "123456", "rol": "profesor"})['id']
 
     # ==========================================
     # 3. MATERIAS
@@ -296,6 +297,18 @@ def run_seed():
     sync_curso_relation(est_john, mat_bd_us, "FINAL", "A", "2024") 
     print("   👉 John se muda a Argentina y rinde equivalencia")
     sync_curso_relation(est_john, mat_bd_ar, "FINAL", 9, "2025") 
+
+    print("   👉 Lucas se inscribe en Bases de Datos AR (solo parcial, cursada ACTIVA)")
+    est_lucas = post("estudiantes/", {"legajo": "L-999", "nombre": "Lucas", "apellido": "Activo", "email": "lucas@mail.com", "pais": "AR"})['id']
+    vincular_estudiante_neo4j(est_lucas, inst_ar, "Lucas", "Activo")
+    
+    # Solo le cargamos el Parcial 1. Esto creará la relación CURSANDO y la mantendrá abierta.
+    sync_curso_relation(est_lucas, mat_bd_ar, "PARCIAL_1", 8, "2026")
+    
+    print("   👉 Emma se inscribe en Database Systems US (cursada ACTIVA)")
+    est_emma = post("estudiantes/", {"legajo": "L-888", "nombre": "Emma", "apellido": "Current", "email": "emma@mail.com", "pais": "US"})['id']
+    vincular_estudiante_neo4j(est_emma, inst_us, "Emma", "Current")
+    sync_curso_relation(est_emma, mat_bd_us, "PARCIAL_1", "B", "2026")
 
     print("\n✅ DATA SEED FINALIZADO EXITOSAMENTE.")
 

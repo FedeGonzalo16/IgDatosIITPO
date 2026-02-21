@@ -8,6 +8,7 @@ import Register from './pages/Register';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ReportesPage from './pages/ReportesPage';
+import ProfessorDashboard from './pages/ProfessorDashboard';
 
 // Componentes
 import ProtectedRoute from './components/ProtectedRoute';
@@ -62,7 +63,7 @@ function App() {
           element={!user ? <Register onLogin={handleLogin} /> : <Navigate to="/" />} 
         />
 
-        {/* Rutas protegidas */}
+        {/* Rutas protegidas Estudiante */}
         <Route
           path="/student"
           element={
@@ -75,6 +76,8 @@ function App() {
           path="/student/subjects"
           element={<Navigate to="/student" state={{ openMenu: 'perfil' }} replace />}
         />
+
+        {/* Rutas protegidas Administrador */}
         <Route
           path="/admin"
           element={
@@ -92,11 +95,24 @@ function App() {
           }
         />
 
-        {/* Ruta raíz: login como primera pantalla si no hay usuario */}
+        {/* NUEVA: Rutas protegidas Profesor */}
+        <Route
+          path="/profesor"
+          element={
+            // Aquí validamos que el rol sea 'profesor' o 'docente' según lo tengas en BD
+            <ProtectedRoute user={user} role={user?.rol} onLogout={handleLogout}>
+              <ProfessorDashboard user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Ruta raíz: login como primera pantalla si no hay usuario o redirección por rol */}
         <Route 
           path="/" 
           element={user ? (
-            user.rol === 'admin' ? <Navigate to="/admin" /> : <Navigate to="/student" />
+            user.rol === 'admin' ? <Navigate to="/admin" /> : 
+            (user.rol === 'profesor' || user.rol === 'docente') ? <Navigate to="/profesor" /> : 
+            <Navigate to="/student" />
           ) : (
             <Login onLogin={handleLogin} />
           )} 

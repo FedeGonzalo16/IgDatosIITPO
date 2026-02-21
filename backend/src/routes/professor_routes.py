@@ -3,7 +3,6 @@ from src.services.professor_service import ProfessorService
 
 professor_bp = Blueprint('professors', __name__)
 
-# CREAR
 @professor_bp.route('/', methods=['POST'])
 def create():
     try:
@@ -12,12 +11,10 @@ def create():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# OBTENER TODOS
 @professor_bp.route('/', methods=['GET'])
 def get_all():
     return jsonify(ProfessorService.get_all())
 
-# OBTENER POR ID
 @professor_bp.route('/<uid>', methods=['GET'])
 def get_by_id(uid):
     prof = ProfessorService.get_by_id(uid)
@@ -25,7 +22,14 @@ def get_by_id(uid):
         return jsonify({"error": "Profesor no encontrado"}), 404
     return jsonify(prof)
 
-# MODIFICAR
+# OBTENER POR EMAIL
+@professor_bp.route('/email/<email>', methods=['GET'])
+def get_by_email(email):
+    prof = ProfessorService.get_by_email(email)
+    if not prof:
+        return jsonify({"error": "Profesor no encontrado"}), 404
+    return jsonify(prof)
+
 @professor_bp.route('/<uid>', methods=['PUT'])
 def update(uid):
     try:
@@ -34,7 +38,6 @@ def update(uid):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ELIMINAR
 @professor_bp.route('/<uid>', methods=['DELETE'])
 def delete(uid):
     try:
@@ -43,7 +46,6 @@ def delete(uid):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ASIGNAR MATERIA
 @professor_bp.route('/<prof_id>/asignar-materia', methods=['POST'])
 def asignar_materia(prof_id):
     try:
@@ -53,3 +55,20 @@ def asignar_materia(prof_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# === NUEVAS RUTAS PARA EL DASHBOARD ===
+
+@professor_bp.route('/<prof_id>/materias', methods=['GET'])
+def get_materias(prof_id):
+    try:
+        materias = ProfessorService.get_materias_by_profesor(prof_id)
+        return jsonify(materias), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@professor_bp.route('/materia/<mat_id>/alumnos', methods=['GET'])
+def get_alumnos_cursando(mat_id):
+    try:
+        alumnos = ProfessorService.get_alumnos_by_materia(mat_id)
+        return jsonify(alumnos), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

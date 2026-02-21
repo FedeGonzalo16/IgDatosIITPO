@@ -73,9 +73,8 @@ export const studentService = {
     apiClient.delete(`/estudiantes/${id}`),
 
   getByEmail: (email) =>
-    apiClient.get(`/estudiantes/email/${encodeURIComponent(email)}`)
+    apiClient.get(`/estudiantes/email/${encodeURIComponent(email)}`),
 
-  ,
   cambiarInstitucion: (id, nueva_institucion_id, regla_conversion_codigo) =>
     apiClient.post(`/estudiantes/${id}/cambiar-institucion`, { nueva_institucion_id, regla_conversion_codigo })
 };
@@ -169,6 +168,9 @@ export const teacherService = {
   getById: (id) =>
     apiClient.get(`/profesores/${id}`),
   
+  getByEmail: (email) =>
+    apiClient.get(`/profesores/email/${encodeURIComponent(email)}`),
+  
   create: (data) =>
     apiClient.post('/profesores', data),
   
@@ -202,7 +204,6 @@ export const reportService = {
   getRegional: (region) =>
     apiClient.get(`/reportes/region/${region}`),
 
-  /** Certificado analítico: reporte integral (promedio histórico, % avance, snapshot opcional) */
   getCertificadoAnalitico: (studentId, params = {}) =>
     apiClient.get(`/reportes/certificado-analitico/${studentId}`, { params })
 };
