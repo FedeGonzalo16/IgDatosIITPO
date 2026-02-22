@@ -21,7 +21,7 @@ CORS(
     supports_credentials=True,
 )
 
-# Cada blueprint agrupa un dominio funcional; todos viven bajo /api/v1/
+# Dominios funcionales; todos viven bajo /api/v1/
 app.register_blueprint(student_bp,    url_prefix='/api/v1/estudiantes')
 app.register_blueprint(academic_bp,   url_prefix='/api/v1/academic')
 app.register_blueprint(grading_bp,    url_prefix='/api/v1/calificaciones')

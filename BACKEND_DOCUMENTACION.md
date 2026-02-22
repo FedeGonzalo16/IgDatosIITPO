@@ -335,7 +335,10 @@ GET /reportes/certificado-analitico/<est_id>
 ## 6. Decisiones de Diseño Importantes
 
 **Sincronización dual MongoDB ↔ Neo4j**
-Toda entidad (estudiante, materia, institución, profesor) existe en ambas bases. MongoDB es la fuente de verdad de los datos; Neo4j es la fuente de verdad de las relaciones. Si una operación falla a mitad, los datos pueden quedar inconsistentes — esto se acepta a cambio de la potencia de consultas de grafo.
+Toda entidad (estudiante, materia, institución, profesor) existe en ambas bases. 
+MongoDB es la fuente de verdad de los datos; 
+Neo4j es la fuente de verdad de las relaciones. 
+Si una operación falla a mitad, los datos pueden quedar inconsistentes — esto se acepta a cambio de la potencia de consultas de grafo.
 
 **Soft Delete generalizado**
 No se borran documentos en MongoDB; se cambia `metadata.estado` a `INACTIVO`. En Neo4j sí se hace `DETACH DELETE` para limpiar relaciones.

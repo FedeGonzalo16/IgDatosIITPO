@@ -5,12 +5,14 @@ import uuid
 
 class GradingService:
     
+    # Inscribimos un alumno en una materia
     @staticmethod
     def inscribir_alumno(est_id, mat_id, anio_lectivo):
         """
-        Crea la relación CURSANDO en el grafo. Usamos CREATE (no MERGE) a propósito:
+        Crea la relación CURSANDO en el grafo. Usamos CREATE para:
         si un alumno recursa la misma materia, debe existir una nueva arista independiente.
         """
+        # Creamos la relación CURSANDO en el grafo
         with get_neo4j() as session:
             session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})
@@ -22,13 +24,15 @@ class GradingService:
             """, est_id=est_id, mat_id=mat_id, anio=anio_lectivo)
         return True
 
+    # Cargamos una nota en una materia
     @staticmethod
     def cargar_nota(est_id, mat_id, tipo_nota, valor):
         """
         Actualiza una propiedad específica de la relación CURSANDO o CURSÓ.
-        tipos permitidos: 'primer_parcial', 'segundo_parcial', 'final', 'previo'
-        Las notas viven en la arista del grafo, no en un documento separado.
+        tipos: 'primer_parcial', 'segundo_parcial', 'final', 'previo'
+        Las notas viven en la arista del grafo.
         """
+        # Creamos la consulta Cypher
         query = f"""
             MATCH (e:Estudiante {{id_mongo: $est_id}})-[r:CURSANDO|CURSÓ]->(m:Materia {{id_mongo: $mat_id}})
             SET r.{tipo_nota} = $valor
@@ -37,6 +41,7 @@ class GradingService:
         with get_neo4j() as session:
             session.run(query, est_id=est_id, mat_id=mat_id, valor=valor)
 
+        # Guardamos el registro de auditoría en Cassandra
         session_cass = get_cassandra()
         if session_cass:
             session_cass.execute("""
@@ -46,12 +51,12 @@ class GradingService:
             
         return True
 
+    # Cerramos una cursada
     @staticmethod
     def cerrar_cursada(est_id, mat_id):
         """
         Evalúa las notas acumuladas y convierte CURSANDO → CURSÓ con el estado final.
-        La lógica de aprobación: final >= 4 OR previo >= 4. Todo en una sola query Cypher
-        para evitar race conditions entre la lectura y la escritura.
+        Lógica de aprobación: final >= 4 OR previo >= 4. 
         """
         with get_neo4j() as session:
             session.run("""
@@ -73,18 +78,19 @@ class GradingService:
             """, est_id=est_id, mat_id=mat_id)
         return True
 
+    # Registramos una calificación
     @staticmethod
     def registrar_calificacion(data):
         """
-        Registra la nota en MongoDB (para consultas y conversiones futuras)
-        y la sincroniza en el grafo Neo4j para que el historial de trayectoria quede actualizado.
+        Registramos la nota en MongoDB y sincronizamos en el grafo Neo4j para que el historial de trayectoria quede actualizado.
         """
         db = get_mongo()
-        
+        # Obtenemos los datos de la calificación
         estudiante_id = data.get('estudiante_id')
         materia_id    = data.get('materia_id')
         valor_original = data.get('valor_original', {})
         
+        # Creamos el documento de la calificación en Mongo
         doc = {
             "estudiante_id": ObjectId(estudiante_id),
             "materia_id":    ObjectId(materia_id),
@@ -92,9 +98,13 @@ class GradingService:
             "conversiones_aplicadas": [],  # Array append-only para futuras conversiones
             "created_at": datetime.utcnow()
         }
+
+        # Insertamos la calificación en Mongo
         res = db.calificaciones.insert_one(doc)
         calif_id = str(res.inserted_id)
         
+        # Creamos el documento de la calificación en Neo4j
+        # Si el tipo de nota y el valor de la nota existen, procedemos a normalizar la nota
         if 'tipo' in valor_original and 'nota' in valor_original:
             tipo_nota_map = {
                 'PARCIAL_1': 'primer_parcial',
@@ -104,22 +114,27 @@ class GradingService:
                 'MIDTERM': 'primer_parcial',
                 'PREVIO': 'previo'
             }
+            # Obtenemos el tipo de nota y el valor de la nota
             tipo_nota  = tipo_nota_map.get(valor_original['tipo'], 'final')
+            # Obtenemos el valor de la nota
             nota_valor = valor_original['nota']
-            
-            # Normalización: si la nota viene como letra (A, B+, etc.), la convertimos a número
+
+            # Normalizamos la nota: si la nota viene como letra (A, B+, etc.), la convertimos a número
             try:
                 if isinstance(nota_valor, str):
                     nota_map = {'A': 10, 'B+': 8, 'B': 7, 'C+': 6, 'C': 5, 'D': 4, 'F': 2}
                     nota_valor = nota_map.get(nota_valor, float(nota_valor) if nota_valor.replace('.', '').isdigit() else 0)
                 nota_valor = float(nota_valor)
-            except:
+            except Exception as e:
+                print(f"[WARNING] Error al normalizar la nota: {e}")
                 nota_valor = 0
             
+            # Cargamos la nota en la materia
             GradingService.cargar_nota(estudiante_id, materia_id, tipo_nota, nota_valor)
         
         return calif_id
 
+    # Obtenemos el historial de una estudiante
     @staticmethod
     def get_historial_estudiante(est_id):
         """
@@ -139,6 +154,7 @@ class GradingService:
                 ORDER BY r.anio DESC
             """, est_id=est_id)
             
+            # Agregamos los datos de las materias en curso
             for record in result:
                 historial.append({
                     "materia_id":     record["materia_id"],
@@ -154,6 +170,7 @@ class GradingService:
                     }
                 })
             
+            # Agregamos los datos de las materias históricas
             result_historico = session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(m:Materia)
                 RETURN m.id_mongo as materia_id, m.nombre as materia_nombre,
@@ -168,6 +185,7 @@ class GradingService:
                 ORDER BY r.fecha_cierre DESC
             """, est_id=est_id)
             
+            # Agregamos los datos a la lista de historial
             for record in result_historico:
                 historial.append({
                     "materia_id":             record["materia_id"],
@@ -191,6 +209,7 @@ class GradingService:
         
         return historial
 
+    # Obtenemos todas las calificaciones
     @staticmethod
     def get_all():
         db = get_mongo()
@@ -201,6 +220,7 @@ class GradingService:
             c['materia_id']    = str(c['materia_id'])
         return calificaciones
 
+    # Obtenemos una calificación por su id
     @staticmethod
     def get_by_id(calif_id):
         db = get_mongo()
@@ -211,6 +231,7 @@ class GradingService:
             calif['materia_id']    = str(calif['materia_id'])
         return calif
 
+    # Actualizamos una calificación
     @staticmethod
     def update(calif_id, data):
         db = get_mongo()
@@ -220,6 +241,7 @@ class GradingService:
         db.calificaciones.update_one({"_id": ObjectId(calif_id)}, {"$set": update_data})
         return True
 
+    # Eliminamos una calificación
     @staticmethod
     def delete(calif_id):
         db = get_mongo()

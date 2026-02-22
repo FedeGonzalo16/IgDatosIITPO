@@ -1,402 +1,329 @@
 import requests
-import json
-import time
 from datetime import datetime
 from src.config.database import get_mongo, get_neo4j, get_redis, get_cassandra
 
-# Configuración
 BASE_URL = "http://localhost:5000/api/v1"
-HEADERS = {'Content-Type': 'application/json'}
+HEADERS  = {'Content-Type': 'application/json'}
 
 def log(step, msg):
     print(f"\n[{step}] {msg}")
 
-def post(endpoint, data):
+def post(endpoint, data=None):
     url = f"{BASE_URL}/{endpoint}"
     try:
-        response = requests.post(url, json=data, headers=HEADERS)
+        response = requests.post(url, json=data or {}, headers=HEADERS)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"❌ Error en {url}: {e}")
-        if response is not None:
-            print(f"   Detalle: {response.text}")
         return None
 
+def put(endpoint, data=None):
+    url = f"{BASE_URL}/{endpoint}"
+    try:
+        response = requests.put(url, json=data or {}, headers=HEADERS)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error en {url}: {e}")
+        return None
 
 def clean_all_datastores():
     print("🧹 Limpiando todas las bases de datos (Mongo, Redis, Neo4j, Cassandra)...")
-    # Mongo: drop all collections in the configured DB
     try:
         db = get_mongo()
-        cols = db.list_collection_names()
-        for c in cols:
+        for c in db.list_collection_names():
             db.drop_collection(c)
-        print(f"   ✅ Mongo: {len(cols)} colecciones eliminadas.")
-    except Exception as e:
-        print(f"   ⚠️ Mongo cleanup falló: {e}")
+    except Exception as e: print(f"   ⚠️ Mongo cleanup falló: {e}")
 
-    # Redis: flush db
     try:
         r = get_redis()
         r.flushdb()
-        print("   ✅ Redis flushDB ejecutado.")
-    except Exception as e:
-        print(f"   ⚠️ Redis cleanup falló: {e}")
+    except Exception as e: print(f"   ⚠️ Redis cleanup falló: {e}")
 
-    # Neo4j: borrar todos los nodos y relaciones
     try:
         with get_neo4j() as session:
             session.run("MATCH (n) DETACH DELETE n")
-        print("   ✅ Neo4j: todos los nodos y relaciones eliminados.")
-    except Exception as e:
-        print(f"   ⚠️ Neo4j cleanup falló: {e}")
+    except Exception as e: print(f"   ⚠️ Neo4j cleanup falló: {e}")
 
-    # Cassandra: truncate known audit tables
     try:
         cass = get_cassandra()
         if cass:
-            tables = [
-                'registro_auditoria', 'certificados_emitidos', 'entity_metadata', 'historico_reglas'
-            ]
-            for t in tables:
-                try:
-                    cass.execute(f"TRUNCATE {t}")
-                except Exception:
-                    # table may not exist yet
-                    pass
-            print(f"   ✅ Cassandra: tablas de auditoría truncadas (si existían).")
-        else:
-            print("   ⚠️ Cassandra session no disponible; se omite limpieza de Cassandra.")
-    except Exception as e:
-        print(f"   ⚠️ Cassandra cleanup falló: {e}")
+            for t in ['registro_auditoria', 'certificados_emitidos', 'entity_metadata', 'historico_reglas']:
+                try: cass.execute(f"TRUNCATE {t}")
+                except Exception: pass
+    except Exception as e: print(f"   ⚠️ Cassandra cleanup falló: {e}")
 
 
-def sync_curso_relation(est_id, mat_id, tipo, nota):
-    """Crea/actualiza una relación CURSÓ en Neo4j entre estudiante y materia.
-    - Para tipos 'FINAL' con nota aprobatoria (>=6 o letra A/B/etc) marca APROBADO y establece 'final' y 'fecha_cierre'.
-    - Para otros tipos deja estado EN_CURSO y registra tipo/nota.
+# ── Helpers de cursada ────────────────────────────────────────────────────────
+
+def inscribir(est_id, mat_id, anio):
+    """Crea la relación CURSANDO en Neo4j vía GradingService."""
+    post("calificaciones/inscribir", {
+        "estudiante_id": est_id,
+        "materia_id":    mat_id,
+        "anio_lectivo":  str(anio)
+    })
+
+def registrar_nota(est_id, mat_id, tipo, nota):
+    """
+    Guarda la calificación en MongoDB (colección calificaciones) y
+    sincroniza la nota en la relación CURSANDO de Neo4j vía GradingService.
+    Retorna el id del documento creado.
+    """
+    res = post("calificaciones/", {
+        "estudiante_id": est_id,
+        "materia_id":    mat_id,
+        "valor_original": {"tipo": tipo, "nota": nota}
+    })
+    return res.get('id') if res else None
+
+def cerrar(est_id, mat_id):
+    """Convierte CURSANDO → CURSÓ con el estado evaluado (APROBADO/REPROBADO) vía GradingService."""
+    post("calificaciones/cerrar-cursada", {
+        "estudiante_id": est_id,
+        "materia_id":    mat_id
+    })
+
+def corregir_estado_neo4j(est_id, mat_id, nuevo_estado):
+    """
+    Corrección directa del estado en la relación CURSÓ de Neo4j para escalas
+    de calificación no convencionales donde el servicio no puede inferir
+    correctamente si la nota es aprobatoria (ej. escala alemana invertida 1.0-6.0
+    o letra "A*" del sistema UK).
     """
     try:
         with get_neo4j() as session:
-            # Asegurar existencia de nodos
-            session.run(
-                "MERGE (e:Estudiante {id_mongo: $eid}) MERGE (m:Materia {id_mongo: $mid})",
-                eid=est_id, mid=mat_id
-            )
-
-            # Si es FINAL -> convertir/crear relación CURSÓ (reemplaza CURSANDO)
-            if tipo == 'FINAL':
-                session.run("""
-                    MATCH (e:Estudiante {id_mongo: $eid})-[r:CURSANDO]->(m:Materia {id_mongo: $mid})
-                    CREATE (e)-[r2:CURSÓ]->(m)
-                    SET r2 = properties(r), 
-                        r2.estado = 'FINALIZADO', 
-                        r2.tipo = $tipo, 
-                        r2.nota = $nota, 
-                        r2.final = $nota, 
-                        r2.fecha_cierre = $fecha_cierre
-                    DELETE r
-                """, eid=est_id, mid=mat_id, tipo=tipo, nota=nota, fecha_cierre=datetime.utcnow().isoformat())
-            else:
-                # Para parciales, midterms, projects intermedios: marcar CURSANDO (upsert)
-                session.run(
-                    "MATCH (e:Estudiante {id_mongo: $eid}), (m:Materia {id_mongo: $mid}) "
-                    "MERGE (e)-[r:CURSANDO]->(m) "
-                    "SET r.tipo = $tipo, r.nota = $nota, r.updated_at = $now",
-                    eid=est_id, mid=mat_id, tipo=tipo, nota=nota, now=datetime.utcnow().isoformat()
-                )
+            session.run("""
+                MATCH (e:Estudiante {id_mongo: $eid})-[r:CURSÓ]->(m:Materia {id_mongo: $mid})
+                SET r.estado = $estado
+            """, eid=est_id, mid=mat_id, estado=nuevo_estado)
     except Exception as e:
-        print(f"   ⚠️ No se pudo sincronizar CURSÓ en Neo4j para estudiante {est_id} y materia {mat_id}: {e}")
+        print(f"   ⚠️ Error corrigiendo estado Neo4j: {e}")
+
+def crear_equivalencias(pares):
+    """Recibe lista de tuplas (id1, id2) y crea EQUIVALE_A bidireccional en Neo4j."""
+    q = "MATCH (a:Materia {id_mongo: $id1}), (b:Materia {id_mongo: $id2}) MERGE (a)-[:EQUIVALE_A]->(b) MERGE (b)-[:EQUIVALE_A]->(a)"
+    with get_neo4j() as session:
+        for id1, id2 in pares:
+            session.run(q, id1=id1, id2=id2)
+
+def agregar_materia_carrera(carrera_id, materia_id):
+    post(f"academic/carreras/{carrera_id}/materias/{materia_id}")
+
 
 def run_seed():
-    print("🌱 INICIANDO SEMBRADO DE DATOS (DATA SEED)...")
-    # Limpiar antes de sembrar
+    print("🌱 INICIANDO SEMBRADO DE DATOS (EDUGRADE MULTIMODELO)...")
     clean_all_datastores()
-    
-    # ==========================================
-    # 1. CREAR INSTITUCIONES (2)
-    # ==========================================
-    log("1", "Creando Instituciones...")
-    
-    inst1 = post("academic/instituciones", {
-        "codigo": "UADE",
-        "nombre": "Universidad Argentina de la Empresa",
-        "pais": "AR"
+
+    # ══════════════════════════════════════════
+    # 1. INSTITUCIONES
+    # ══════════════════════════════════════════
+    log("1", "Creando Instituciones (AR, US, UK, DE)...")
+    inst_ar = post("academic/instituciones", {"codigo": "UBA",  "nombre": "Universidad de Buenos Aires",        "pais": "AR", "sistema_calificacion": "Numerico 1-10",       "nivel": "Universitario"})['id']
+    inst_us = post("academic/instituciones", {"codigo": "MIT",  "nombre": "Mass. Institute of Technology",       "pais": "US", "sistema_calificacion": "Letras A-F / GPA",    "nivel": "Universitario"})['id']
+    inst_uk = post("academic/instituciones", {"codigo": "OXF",  "nombre": "Oxford University",                   "pais": "UK", "sistema_calificacion": "Letras A*-F",          "nivel": "Universitario"})['id']
+    inst_de = post("academic/instituciones", {"codigo": "TUM",  "nombre": "Technical University of Munich",      "pais": "DE", "sistema_calificacion": "Inverso 1.0-6.0",      "nivel": "Universitario"})['id']
+    print(f"   ✅ 4 instituciones creadas.")
+
+    # ══════════════════════════════════════════
+    # 2. ADMIN Y PROFESORES
+    # ══════════════════════════════════════════
+    log("2", "Creando Admin y Profesores...")
+    db = get_mongo()
+    # El administrador no tiene un endpoint propio; se inserta directamente en MongoDB
+    # y se registra su nodo en Neo4j para las relaciones del grafo.
+    res_admin = db.administradores.insert_one({
+        "legajo": "ADMIN-001", "nombre": "Admin", "apellido": "Global",
+        "email": "admin@edugrade.com", "activo": True
     })
-    id_uade = inst1['id']
-    print(f"   ✅ UADE creada (ID: {id_uade})")
+    admin_id = str(res_admin.inserted_id)
+    with get_neo4j() as session:
+        session.run("CREATE (a:Admin {id_mongo: $id, nombre: 'Admin', apellido: 'Global', activo: true})", id=admin_id)
+    print("   ✅ Admin creado.")
 
-    inst2 = post("academic/instituciones", {
-        "codigo": "MIT",
-        "nombre": "Massachusetts Institute of Technology",
-        "pais": "US"
-    })
-    id_mit = inst2['id']
-    print(f"   ✅ MIT creada (ID: {id_mit})")
+    prof_ar1 = post("profesores/", {"legajo_docente": "P-AR1", "nombre": "Jorge",    "apellido": "Borges",    "especialidad": "Bases de Datos",        "email": "jorge@mail.com",    "password": "123456", "rol": "profesor"})['id']
+    prof_ar2 = post("profesores/", {"legajo_docente": "P-AR2", "nombre": "María",    "apellido": "García",    "especialidad": "Algoritmos",            "email": "maria@mail.com",    "password": "123456", "rol": "profesor"})['id']
+    prof_ar3 = post("profesores/", {"legajo_docente": "P-AR3", "nombre": "Carlos",   "apellido": "López",     "especialidad": "Sistemas Operativos",   "email": "carlos@mail.com",   "password": "123456", "rol": "profesor"})['id']
+    prof_us1 = post("profesores/", {"legajo_docente": "P-US1", "nombre": "Alan",     "apellido": "Turing",    "especialidad": "Computer Science",      "email": "alan@mail.com",     "password": "123456", "rol": "profesor"})['id']
+    prof_us2 = post("profesores/", {"legajo_docente": "P-US2", "nombre": "Lisa",     "apellido": "Chen",      "especialidad": "Machine Learning",      "email": "lisa@mail.com",     "password": "123456", "rol": "profesor"})['id']
+    prof_uk1 = post("profesores/", {"legajo_docente": "P-UK1", "nombre": "Ada",      "apellido": "Lovelace",  "especialidad": "Programming",           "email": "ada@mail.com",      "password": "123456", "rol": "profesor"})['id']
+    prof_de1 = post("profesores/", {"legajo_docente": "P-DE1", "nombre": "Heinrich", "apellido": "Müller",    "especialidad": "Informatik",            "email": "heinrich@mail.com", "password": "123456", "rol": "profesor"})['id']
+    print(f"   ✅ 7 profesores creados.")
 
-    # ==========================================
-    # 2. CREAR USUARIO ADMINISTRADOR
-    # ==========================================
-    log("2", "Creando Usuario Administrador...")
-    
-    admin_res = post("estudiantes/", {
-        "legajo": "ADMIN-001",
-        "nombre": "Administrador",
-        "apellido": "Sistema",
-        "email": "admin@example.com"
-    })
-    if admin_res:
-        id_admin = admin_res.get('id')
-        print(f"   ✅ Admin creado (ID: {id_admin})")
-        print("      📧 Email: admin@example.com | 🔑 Contraseña: 123456")
-    else:
-        print("   ⚠️ No se pudo crear el admin (verifica que el backend esté corriendo)")
+    # ══════════════════════════════════════════
+    # 3. MATERIAS (4-5 por institución)
+    # ══════════════════════════════════════════
+    log("3", "Creando Materias por institución...")
 
-    # ==========================================
-    # 3. CREAR MATERIAS (5)
-    # ==========================================
-    log("3", "Creando Materias...")
-    
-    # Materias de UADE
-    mat_bd = post("academic/materias", {
-        "codigo": "CS-101",
-        "nombre": "Bases de Datos NoSQL",
-        "nivel": "GRADO",
-        "institucion_id": id_uade
-    })['id']
-    
-    mat_prog = post("academic/materias", {
-        "codigo": "CS-102",
-        "nombre": "Programación Avanzada",
-        "nivel": "GRADO",
-        "institucion_id": id_uade
-    })['id']
+    # — UBA (Argentina, escala 1-10) —
+    mat_bd_ar    = post("academic/materias", {"codigo": "BD-AR",    "nombre": "Bases de Datos I",            "institucion_id": inst_ar})['id']
+    mat_algo_ar  = post("academic/materias", {"codigo": "ALGO-AR",  "nombre": "Algoritmos y Estructuras",    "institucion_id": inst_ar})['id']
+    mat_so_ar    = post("academic/materias", {"codigo": "SO-AR",    "nombre": "Sistemas Operativos",         "institucion_id": inst_ar})['id']
+    mat_redes_ar = post("academic/materias", {"codigo": "REDES-AR", "nombre": "Redes de Computadoras",       "institucion_id": inst_ar})['id']
+    mat_prog_ar  = post("academic/materias", {"codigo": "PROG-AR",  "nombre": "Programación I",              "institucion_id": inst_ar})['id']
 
-    mat_math = post("academic/materias", {
-        "codigo": "MAT-200",
-        "nombre": "Análisis Matemático II",
-        "nivel": "GRADO",
-        "institucion_id": id_uade
-    })['id']
-    
-    # Materias del MIT
-    mat_ai = post("academic/materias", {
-        "codigo": "AI-500",
-        "nombre": "Artificial Intelligence",
-        "nivel": "POSTGRADO",
-        "institucion_id": id_mit
-    })['id']
+    # — MIT (EEUU, escala letras / GPA) —
+    mat_bd_us    = post("academic/materias", {"codigo": "CS-300",   "nombre": "Database Systems",            "institucion_id": inst_us})['id']
+    mat_algo_us  = post("academic/materias", {"codigo": "CS-401",   "nombre": "Algorithms",                  "institucion_id": inst_us})['id']
+    mat_so_us    = post("academic/materias", {"codigo": "CS-502",   "nombre": "Operating Systems",           "institucion_id": inst_us})['id']
+    mat_ml_us    = post("academic/materias", {"codigo": "CS-601",   "nombre": "Machine Learning",            "institucion_id": inst_us})['id']
+    mat_prog_us  = post("academic/materias", {"codigo": "CS-201",   "nombre": "Programming Fundamentals",    "institucion_id": inst_us})['id']
 
-    mat_robotics = post("academic/materias", {
-        "codigo": "ROB-300",
-        "nombre": "Robotics 101",
-        "nivel": "GRADO",
-        "institucion_id": id_mit
-    })['id']
+    # — Oxford (UK, escala A*-F) —
+    mat_bd_uk    = post("academic/materias", {"codigo": "MOD-DB",   "nombre": "Data Engineering",            "institucion_id": inst_uk})['id']
+    mat_algo_uk  = post("academic/materias", {"codigo": "MOD-ALGO", "nombre": "Computational Thinking",      "institucion_id": inst_uk})['id']
+    mat_so_uk    = post("academic/materias", {"codigo": "MOD-OS",   "nombre": "Advanced Operating Systems",  "institucion_id": inst_uk})['id']
+    mat_ml_uk    = post("academic/materias", {"codigo": "MOD-ML",   "nombre": "Machine Learning & AI",       "institucion_id": inst_uk})['id']
 
-    print("   ✅ 5 Materias creadas y vinculadas a sus instituciones.")
+    # — TUM (Alemania, escala invertida 1.0-6.0) —
+    mat_bd_de    = post("academic/materias", {"codigo": "INF-DB",   "nombre": "Datenbanksysteme",             "institucion_id": inst_de})['id']
+    mat_algo_de  = post("academic/materias", {"codigo": "INF-ALGO", "nombre": "Algorithmen",                  "institucion_id": inst_de})['id']
+    mat_so_de    = post("academic/materias", {"codigo": "INF-OS",   "nombre": "Betriebssysteme",              "institucion_id": inst_de})['id']
+    mat_redes_de = post("academic/materias", {"codigo": "INF-NET",  "nombre": "Netzwerke und Kommunikation",  "institucion_id": inst_de})['id']
 
-    # ==========================================
-    # 3. CREAR ESTUDIANTES (3)
-    # ==========================================
-    log("4", "Creando Estudiantes...")
+    print(f"   ✅ 18 materias creadas en 4 instituciones.")
 
-    # Estudiante 1 (UADE - Va a recursar)
-    est_fede = post("estudiantes/", {
-        "legajo": "L-1001",
-        "nombre": "Federico",
-        "apellido": "Lopez",
-        "email": "fede@mail.com",
-        "pais": "AR"
-    })['id']
-    # Asociar estudiante a Institución (UADE)
-    try:
-        with get_neo4j() as session:
-            session.run("MATCH (e:Estudiante {id_mongo: $eid}), (i:Institucion {id_mongo: $iid}) MERGE (e)-[:PERTENECE_A]->(i)", eid=est_fede, iid=id_uade)
-    except Exception as _:
-        pass
-    print(f"   ✅ Federico creado (ID: {est_fede}) - UADE")
+    # Asignación de materias a profesores
+    post(f"profesores/{prof_ar1}/asignar-materia", {"materia_id": mat_bd_ar})
+    post(f"profesores/{prof_ar2}/asignar-materia", {"materia_id": mat_algo_ar})
+    post(f"profesores/{prof_ar3}/asignar-materia", {"materia_id": mat_so_ar})
+    post(f"profesores/{prof_ar3}/asignar-materia", {"materia_id": mat_redes_ar})
+    post(f"profesores/{prof_us1}/asignar-materia", {"materia_id": mat_bd_us})
+    post(f"profesores/{prof_us1}/asignar-materia", {"materia_id": mat_algo_us})
+    post(f"profesores/{prof_us2}/asignar-materia", {"materia_id": mat_ml_us})
+    post(f"profesores/{prof_uk1}/asignar-materia", {"materia_id": mat_bd_uk})
+    post(f"profesores/{prof_de1}/asignar-materia", {"materia_id": mat_bd_de})
+    post(f"profesores/{prof_de1}/asignar-materia", {"materia_id": mat_algo_de})
 
-    # Estudiante 2 (UADE - Promedio alto)
-    est_ana = post("estudiantes/", {
-        "legajo": "L-1002",
-        "nombre": "Ana",
-        "apellido": "Garcia",
-        "email": "ana@mail.com",
-        "pais": "AR"
-    })['id']
-    # Asociar estudiante a Institución (UADE)
-    try:
-        with get_neo4j() as session:
-            session.run("MATCH (e:Estudiante {id_mongo: $eid}), (i:Institucion {id_mongo: $iid}) MERGE (e)-[:PERTENECE_A]->(i)", eid=est_ana, iid=id_uade)
-    except Exception as _:
-        pass
-    print(f"   ✅ Ana creada (ID: {est_ana}) - UADE")
+    # Equivalencias entre instituciones (misma disciplina, diferente escala)
+    crear_equivalencias([
+        (mat_bd_ar,   mat_bd_us),   (mat_bd_us,   mat_bd_uk),   (mat_bd_uk,   mat_bd_de),
+        (mat_algo_ar, mat_algo_us), (mat_algo_us, mat_algo_uk), (mat_algo_uk, mat_algo_de),
+        (mat_so_ar,   mat_so_us),   (mat_so_us,   mat_so_uk),   (mat_so_uk,   mat_so_de),
+        (mat_redes_ar, mat_redes_de),
+    ])
+    print("   ✅ Equivalencias entre instituciones creadas.")
 
-    # Estudiante 3 (MIT - Internacional)
-    est_john = post("estudiantes/", {
-        "legajo": "US-9900",
-        "nombre": "John",
-        "apellido": "Doe",
-        "email": "john@mit.edu",
-        "pais": "US"
-    })['id']
-    # Asociar estudiante a Institución (MIT)
-    try:
-        with get_neo4j() as session:
-            session.run("MATCH (e:Estudiante {id_mongo: $eid}), (i:Institucion {id_mongo: $iid}) MERGE (e)-[:PERTENECE_A]->(i)", eid=est_john, iid=id_mit)
-    except Exception as _:
-        pass
-    print(f"   ✅ John creado (ID: {est_john}) - MIT")
+    # ══════════════════════════════════════════
+    # 4. CARRERAS
+    # ══════════════════════════════════════════
+    log("4", "Creando Carreras y asignando materias...")
 
-    # ==========================================
-    # 5. CREAR PROFESORES
-    # ==========================================
-    log("5", "Creando Profesores...")
+    car_sistemas = post("academic/carreras", {"codigo": "IS-UBA",  "nombre": "Ingeniería en Sistemas"})['id']
+    car_cs_us    = post("academic/carreras", {"codigo": "CS-MIT",  "nombre": "Computer Science"})['id']
+    car_cs_uk    = post("academic/carreras", {"codigo": "CS-OXF",  "nombre": "Computer Science Oxford"})['id']
+    car_inf_de   = post("academic/carreras", {"codigo": "INF-TUM", "nombre": "Informatik"})['id']
 
-    prof_bd = post("profesores/", {
-        "legajo_docente": "PROF-101",
-        "nombre": "Carlos",
-        "apellido": "Mendoza",
-        "especialidad": "Bases de Datos"
-    })
-    prof_prog = post("profesores/", {
-        "legajo_docente": "PROF-102",
-        "nombre": "María",
-        "apellido": "Fernández",
-        "especialidad": "Programación"
-    })
-    prof_math = post("profesores/", {
-        "legajo_docente": "PROF-103",
-        "nombre": "Roberto",
-        "apellido": "Pérez",
-        "especialidad": "Matemática"
-    })
-    prof_ai = post("profesores/", {
-        "legajo_docente": "PROF-501",
-        "nombre": "David",
-        "apellido": "Wilson",
-        "especialidad": "Inteligencia Artificial"
-    })
-    prof_robotics = post("profesores/", {
-        "legajo_docente": "PROF-302",
-        "nombre": "Sarah",
-        "apellido": "Johnson",
-        "especialidad": "Robótica"
-    })
+    for mat in [mat_bd_ar, mat_algo_ar, mat_so_ar, mat_redes_ar, mat_prog_ar]:
+        agregar_materia_carrera(car_sistemas, mat)
 
-    id_prof_bd = prof_bd.get('id') if prof_bd else None
-    id_prof_prog = prof_prog.get('id') if prof_prog else None
-    id_prof_math = prof_math.get('id') if prof_math else None
-    id_prof_ai = prof_ai.get('id') if prof_ai else None
-    id_prof_robotics = prof_robotics.get('id') if prof_robotics else None
+    for mat in [mat_bd_us, mat_algo_us, mat_so_us, mat_ml_us, mat_prog_us]:
+        agregar_materia_carrera(car_cs_us, mat)
 
-    # Asignar profesores a materias
-    if id_prof_bd:
-        post(f"profesores/{id_prof_bd}/asignar-materia", {"materia_id": mat_bd})
-    if id_prof_prog:
-        post(f"profesores/{id_prof_prog}/asignar-materia", {"materia_id": mat_prog})
-    if id_prof_math:
-        post(f"profesores/{id_prof_math}/asignar-materia", {"materia_id": mat_math})
-    if id_prof_ai:
-        post(f"profesores/{id_prof_ai}/asignar-materia", {"materia_id": mat_ai})
-    if id_prof_robotics:
-        post(f"profesores/{id_prof_robotics}/asignar-materia", {"materia_id": mat_robotics})
+    for mat in [mat_bd_uk, mat_algo_uk, mat_so_uk, mat_ml_uk]:
+        agregar_materia_carrera(car_cs_uk, mat)
 
-    print("   ✅ 5 Profesores creados y asignados a sus materias.")
+    for mat in [mat_bd_de, mat_algo_de, mat_so_de, mat_redes_de]:
+        agregar_materia_carrera(car_inf_de, mat)
 
-    # ==========================================
-    # 5b. CREAR REGLAS DE CONVERSIÓN (UK, US, Alemania, Argentina)
-    # ==========================================
-    log("5b", "Creando Reglas de Conversión (12 combinaciones)...")
+    print("   ✅ 4 carreras creadas con sus materias asignadas.")
+
+    # ══════════════════════════════════════════
+    # 4b. REGLAS DE CONVERSIÓN
+    # Se usan los servicios para que también queden cacheadas en Redis (TTL 7 días).
+    # ══════════════════════════════════════════
+    log("4b", "Creando Reglas de Conversión via service (MongoDB + Redis)...")
 
     reglas_conversion = [
-        # --- ARGENTINA (1-10) ---
-        {"codigo_regla": "AR_TO_UK", "nombre": "Argentina → Reino Unido (GCSE/A-Level)", "mapeo": [
+        {"codigo_regla": "AR_TO_UK",     "nombre": "Argentina → Reino Unido (GCSE/A-Level)", "mapeo": [
             {"nota_origen": 10, "nota_destino": "A*"}, {"nota_origen": 9, "nota_destino": "A"},
-            {"nota_origen": 8, "nota_destino": "B"}, {"nota_origen": 7, "nota_destino": "C"},
-            {"nota_origen": 6, "nota_destino": "D"}, {"nota_origen": 5, "nota_destino": "E"},
-            {"nota_origen": 4, "nota_destino": "F"}, {"nota_origen": 3, "nota_destino": "F"}, {"nota_origen": 2, "nota_destino": "F"}, {"nota_origen": 1, "nota_destino": "F"},
+            {"nota_origen": 8,  "nota_destino": "B"},  {"nota_origen": 7, "nota_destino": "C"},
+            {"nota_origen": 6,  "nota_destino": "D"},  {"nota_origen": 5, "nota_destino": "E"},
+            {"nota_origen": 4,  "nota_destino": "F"},  {"nota_origen": 3, "nota_destino": "F"},
+            {"nota_origen": 2,  "nota_destino": "F"},  {"nota_origen": 1, "nota_destino": "F"},
         ]},
-        {"codigo_regla": "AR_TO_US", "nombre": "Argentina → Estados Unidos (Letras)", "mapeo": [
+        {"codigo_regla": "AR_TO_US",     "nombre": "Argentina → Estados Unidos (Letras)", "mapeo": [
             {"nota_origen": 10, "nota_destino": "A"}, {"nota_origen": 9, "nota_destino": "A"},
-            {"nota_origen": 8, "nota_destino": "B"}, {"nota_origen": 7, "nota_destino": "C"},
-            {"nota_origen": 6, "nota_destino": "D"}, {"nota_origen": 5, "nota_destino": "F"},
-            {"nota_origen": 4, "nota_destino": "F"}, {"nota_origen": 3, "nota_destino": "F"}, {"nota_origen": 2, "nota_destino": "F"}, {"nota_origen": 1, "nota_destino": "F"},
+            {"nota_origen": 8,  "nota_destino": "B"}, {"nota_origen": 7, "nota_destino": "C"},
+            {"nota_origen": 6,  "nota_destino": "D"}, {"nota_origen": 5, "nota_destino": "F"},
+            {"nota_origen": 4,  "nota_destino": "F"}, {"nota_origen": 3, "nota_destino": "F"},
+            {"nota_origen": 2,  "nota_destino": "F"}, {"nota_origen": 1, "nota_destino": "F"},
         ]},
         {"codigo_regla": "AR_TO_US_GPA", "nombre": "Argentina → Estados Unidos (GPA 0-4)", "mapeo": [
             {"nota_origen": 10, "nota_destino": 4.0}, {"nota_origen": 9, "nota_destino": 3.5},
-            {"nota_origen": 8, "nota_destino": 3.0}, {"nota_origen": 7, "nota_destino": 2.5},
-            {"nota_origen": 6, "nota_destino": 2.0}, {"nota_origen": 5, "nota_destino": 1.0},
-            {"nota_origen": 4, "nota_destino": 0.0}, {"nota_origen": 3, "nota_destino": 0.0}, {"nota_origen": 2, "nota_destino": 0.0}, {"nota_origen": 1, "nota_destino": 0.0},
+            {"nota_origen": 8,  "nota_destino": 3.0}, {"nota_origen": 7, "nota_destino": 2.5},
+            {"nota_origen": 6,  "nota_destino": 2.0}, {"nota_origen": 5, "nota_destino": 1.0},
+            {"nota_origen": 4,  "nota_destino": 0.0}, {"nota_origen": 3, "nota_destino": 0.0},
+            {"nota_origen": 2,  "nota_destino": 0.0}, {"nota_origen": 1, "nota_destino": 0.0},
         ]},
-        {"codigo_regla": "AR_TO_DE", "nombre": "Argentina → Alemania (1.0-6.0)", "mapeo": [
+        {"codigo_regla": "AR_TO_DE",     "nombre": "Argentina → Alemania (1.0-6.0)", "mapeo": [
             {"nota_origen": 10, "nota_destino": 1.0}, {"nota_origen": 9, "nota_destino": 1.3},
-            {"nota_origen": 8, "nota_destino": 2.0}, {"nota_origen": 7, "nota_destino": 2.5},
-            {"nota_origen": 6, "nota_destino": 4.0}, {"nota_origen": 5, "nota_destino": 5.0},
-            {"nota_origen": 4, "nota_destino": 6.0}, {"nota_origen": 3, "nota_destino": 6.0}, {"nota_origen": 2, "nota_destino": 6.0}, {"nota_origen": 1, "nota_destino": 6.0},
+            {"nota_origen": 8,  "nota_destino": 2.0}, {"nota_origen": 7, "nota_destino": 2.5},
+            {"nota_origen": 6,  "nota_destino": 4.0}, {"nota_origen": 5, "nota_destino": 5.0},
+            {"nota_origen": 4,  "nota_destino": 6.0}, {"nota_origen": 3, "nota_destino": 6.0},
+            {"nota_origen": 2,  "nota_destino": 6.0}, {"nota_origen": 1, "nota_destino": 6.0},
         ]},
-        # --- REINO UNIDO (A*-F) ---
-        {"codigo_regla": "UK_TO_AR", "nombre": "Reino Unido → Argentina", "mapeo": [
+        {"codigo_regla": "UK_TO_AR",     "nombre": "Reino Unido → Argentina", "mapeo": [
             {"nota_origen": "A*", "nota_destino": 10}, {"nota_origen": "A", "nota_destino": 9},
-            {"nota_origen": "B", "nota_destino": 8}, {"nota_origen": "C", "nota_destino": 7},
-            {"nota_origen": "D", "nota_destino": 6}, {"nota_origen": "E", "nota_destino": 5},
-            {"nota_origen": "F", "nota_destino": 4},
+            {"nota_origen": "B",  "nota_destino": 8},  {"nota_origen": "C", "nota_destino": 7},
+            {"nota_origen": "D",  "nota_destino": 6},  {"nota_origen": "E", "nota_destino": 5},
+            {"nota_origen": "F",  "nota_destino": 4},
         ]},
-        {"codigo_regla": "UK_TO_US", "nombre": "Reino Unido → Estados Unidos", "mapeo": [
+        {"codigo_regla": "UK_TO_US",     "nombre": "Reino Unido → Estados Unidos", "mapeo": [
             {"nota_origen": "A*", "nota_destino": "A"}, {"nota_origen": "A", "nota_destino": "A"},
-            {"nota_origen": "B", "nota_destino": "B"}, {"nota_origen": "C", "nota_destino": "C"},
-            {"nota_origen": "D", "nota_destino": "D"}, {"nota_origen": "E", "nota_destino": "F"}, {"nota_origen": "F", "nota_destino": "F"},
+            {"nota_origen": "B",  "nota_destino": "B"}, {"nota_origen": "C", "nota_destino": "C"},
+            {"nota_origen": "D",  "nota_destino": "D"}, {"nota_origen": "E", "nota_destino": "F"},
+            {"nota_origen": "F",  "nota_destino": "F"},
         ]},
-        {"codigo_regla": "UK_TO_DE", "nombre": "Reino Unido → Alemania", "mapeo": [
+        {"codigo_regla": "UK_TO_DE",     "nombre": "Reino Unido → Alemania", "mapeo": [
             {"nota_origen": "A*", "nota_destino": 1.0}, {"nota_origen": "A", "nota_destino": 1.3},
-            {"nota_origen": "B", "nota_destino": 2.0}, {"nota_origen": "C", "nota_destino": 2.5},
-            {"nota_origen": "D", "nota_destino": 4.0}, {"nota_origen": "E", "nota_destino": 5.0}, {"nota_origen": "F", "nota_destino": 6.0},
+            {"nota_origen": "B",  "nota_destino": 2.0}, {"nota_origen": "C", "nota_destino": 2.5},
+            {"nota_origen": "D",  "nota_destino": 4.0}, {"nota_origen": "E", "nota_destino": 5.0},
+            {"nota_origen": "F",  "nota_destino": 6.0},
         ]},
-        # --- ESTADOS UNIDOS (A-F, GPA) ---
+        {"codigo_regla": "US_TO_AR",     "nombre": "Estados Unidos (Letras) → Argentina", "mapeo": [
+            {"nota_origen": "A",  "nota_destino": 10}, {"nota_origen": "A+", "nota_destino": 10}, {"nota_origen": "A-", "nota_destino": 9},
+            {"nota_origen": "B",  "nota_destino": 8},  {"nota_origen": "B+", "nota_destino": 8},  {"nota_origen": "B-", "nota_destino": 7},
+            {"nota_origen": "C",  "nota_destino": 7},  {"nota_origen": "C+", "nota_destino": 6},  {"nota_origen": "C-", "nota_destino": 6},
+            {"nota_origen": "D",  "nota_destino": 6},  {"nota_origen": "F",  "nota_destino": 4},
+        ]},
+        {"codigo_regla": "US_TO_UK",     "nombre": "Estados Unidos → Reino Unido", "mapeo": [
+            {"nota_origen": "A",  "nota_destino": "A"},  {"nota_origen": "A+", "nota_destino": "A*"}, {"nota_origen": "A-", "nota_destino": "A"},
+            {"nota_origen": "B",  "nota_destino": "B"},  {"nota_origen": "B+", "nota_destino": "B"},  {"nota_origen": "B-", "nota_destino": "B"},
+            {"nota_origen": "C",  "nota_destino": "C"},  {"nota_origen": "C+", "nota_destino": "C"},  {"nota_origen": "C-", "nota_destino": "C"},
+            {"nota_origen": "D",  "nota_destino": "D"},  {"nota_origen": "F",  "nota_destino": "F"},
+        ]},
+        {"codigo_regla": "US_TO_DE",     "nombre": "Estados Unidos → Alemania", "mapeo": [
+            {"nota_origen": "A",  "nota_destino": 1.0}, {"nota_origen": "A+", "nota_destino": 1.0}, {"nota_origen": "A-", "nota_destino": 1.3},
+            {"nota_origen": "B",  "nota_destino": 2.0}, {"nota_origen": "B+", "nota_destino": 1.7}, {"nota_origen": "B-", "nota_destino": 2.3},
+            {"nota_origen": "C",  "nota_destino": 3.0}, {"nota_origen": "C+", "nota_destino": 2.5}, {"nota_origen": "C-", "nota_destino": 3.3},
+            {"nota_origen": "D",  "nota_destino": 4.0}, {"nota_origen": "F",  "nota_destino": 6.0},
+        ]},
         {"codigo_regla": "US_GPA_TO_AR", "nombre": "Estados Unidos (GPA) → Argentina", "mapeo": [
             {"nota_origen": 4.0, "nota_destino": 10}, {"nota_origen": 3.5, "nota_destino": 9},
-            {"nota_origen": 3.0, "nota_destino": 8}, {"nota_origen": 2.5, "nota_destino": 7},
-            {"nota_origen": 2.0, "nota_destino": 6}, {"nota_origen": 1.5, "nota_destino": 5},
-            {"nota_origen": 1.0, "nota_destino": 4}, {"nota_origen": 0.5, "nota_destino": 4}, {"nota_origen": 0.0, "nota_destino": 4},
+            {"nota_origen": 3.0, "nota_destino": 8},  {"nota_origen": 2.5, "nota_destino": 7},
+            {"nota_origen": 2.0, "nota_destino": 6},  {"nota_origen": 1.5, "nota_destino": 5},
+            {"nota_origen": 1.0, "nota_destino": 4},  {"nota_origen": 0.5, "nota_destino": 4},
+            {"nota_origen": 0.0, "nota_destino": 4},
         ]},
-        {"codigo_regla": "US_TO_AR", "nombre": "Estados Unidos (Letras) → Argentina", "mapeo": [
-            {"nota_origen": "A", "nota_destino": 10}, {"nota_origen": "A+", "nota_destino": 10}, {"nota_origen": "A-", "nota_destino": 9},
-            {"nota_origen": "B", "nota_destino": 8}, {"nota_origen": "B+", "nota_destino": 8}, {"nota_origen": "B-", "nota_destino": 7},
-            {"nota_origen": "C", "nota_destino": 7}, {"nota_origen": "C+", "nota_destino": 6}, {"nota_origen": "C-", "nota_destino": 6},
-            {"nota_origen": "D", "nota_destino": 6}, {"nota_origen": "F", "nota_destino": 4},
-        ]},
-        {"codigo_regla": "US_TO_UK", "nombre": "Estados Unidos → Reino Unido", "mapeo": [
-            {"nota_origen": "A", "nota_destino": "A"}, {"nota_origen": "A+", "nota_destino": "A*"}, {"nota_origen": "A-", "nota_destino": "A"},
-            {"nota_origen": "B", "nota_destino": "B"}, {"nota_origen": "B+", "nota_destino": "B"}, {"nota_origen": "B-", "nota_destino": "B"},
-            {"nota_origen": "C", "nota_destino": "C"}, {"nota_origen": "C+", "nota_destino": "C"}, {"nota_origen": "C-", "nota_destino": "C"},
-            {"nota_origen": "D", "nota_destino": "D"}, {"nota_origen": "F", "nota_destino": "F"},
-        ]},
-        {"codigo_regla": "US_TO_DE", "nombre": "Estados Unidos → Alemania", "mapeo": [
-            {"nota_origen": "A", "nota_destino": 1.0}, {"nota_origen": "A+", "nota_destino": 1.0}, {"nota_origen": "A-", "nota_destino": 1.3},
-            {"nota_origen": "B", "nota_destino": 2.0}, {"nota_origen": "B+", "nota_destino": 1.7}, {"nota_origen": "B-", "nota_destino": 2.3},
-            {"nota_origen": "C", "nota_destino": 3.0}, {"nota_origen": "C+", "nota_destino": 2.5}, {"nota_origen": "C-", "nota_destino": 3.3},
-            {"nota_origen": "D", "nota_destino": 4.0}, {"nota_origen": "F", "nota_destino": 6.0},
-        ]},
-        # --- ALEMANIA (1.0-6.0, inversa) ---
-        {"codigo_regla": "DE_TO_AR", "nombre": "Alemania → Argentina", "mapeo": [
+        {"codigo_regla": "DE_TO_AR",     "nombre": "Alemania → Argentina", "mapeo": [
             {"nota_origen": 1.0, "nota_destino": 10}, {"nota_origen": 1.3, "nota_destino": 9}, {"nota_origen": 1.7, "nota_destino": 9},
-            {"nota_origen": 2.0, "nota_destino": 8}, {"nota_origen": 2.3, "nota_destino": 8}, {"nota_origen": 2.7, "nota_destino": 7},
-            {"nota_origen": 3.0, "nota_destino": 7}, {"nota_origen": 3.3, "nota_destino": 7}, {"nota_origen": 3.7, "nota_destino": 6},
-            {"nota_origen": 4.0, "nota_destino": 6}, {"nota_origen": 4.3, "nota_destino": 5}, {"nota_origen": 4.7, "nota_destino": 5},
-            {"nota_origen": 5.0, "nota_destino": 4}, {"nota_origen": 5.3, "nota_destino": 4}, {"nota_origen": 5.7, "nota_destino": 4},
+            {"nota_origen": 2.0, "nota_destino": 8},  {"nota_origen": 2.3, "nota_destino": 8}, {"nota_origen": 2.7, "nota_destino": 7},
+            {"nota_origen": 3.0, "nota_destino": 7},  {"nota_origen": 3.3, "nota_destino": 7}, {"nota_origen": 3.7, "nota_destino": 6},
+            {"nota_origen": 4.0, "nota_destino": 6},  {"nota_origen": 4.3, "nota_destino": 5}, {"nota_origen": 4.7, "nota_destino": 5},
+            {"nota_origen": 5.0, "nota_destino": 4},  {"nota_origen": 5.3, "nota_destino": 4}, {"nota_origen": 5.7, "nota_destino": 4},
             {"nota_origen": 6.0, "nota_destino": 4},
         ]},
-        {"codigo_regla": "DE_TO_UK", "nombre": "Alemania → Reino Unido", "mapeo": [
+        {"codigo_regla": "DE_TO_UK",     "nombre": "Alemania → Reino Unido", "mapeo": [
             {"nota_origen": 1.0, "nota_destino": "A*"}, {"nota_origen": 1.3, "nota_destino": "A"}, {"nota_origen": 1.7, "nota_destino": "A"},
-            {"nota_origen": 2.0, "nota_destino": "B"}, {"nota_origen": 2.3, "nota_destino": "B"}, {"nota_origen": 2.7, "nota_destino": "C"},
-            {"nota_origen": 3.0, "nota_destino": "C"}, {"nota_origen": 3.3, "nota_destino": "C"}, {"nota_origen": 3.7, "nota_destino": "D"},
-            {"nota_origen": 4.0, "nota_destino": "D"}, {"nota_origen": 4.3, "nota_destino": "E"}, {"nota_origen": 4.7, "nota_destino": "E"},
-            {"nota_origen": 5.0, "nota_destino": "F"}, {"nota_origen": 5.3, "nota_destino": "F"}, {"nota_origen": 5.7, "nota_destino": "F"},
+            {"nota_origen": 2.0, "nota_destino": "B"},  {"nota_origen": 2.3, "nota_destino": "B"}, {"nota_origen": 2.7, "nota_destino": "C"},
+            {"nota_origen": 3.0, "nota_destino": "C"},  {"nota_origen": 3.3, "nota_destino": "C"}, {"nota_origen": 3.7, "nota_destino": "D"},
+            {"nota_origen": 4.0, "nota_destino": "D"},  {"nota_origen": 4.3, "nota_destino": "E"}, {"nota_origen": 4.7, "nota_destino": "E"},
+            {"nota_origen": 5.0, "nota_destino": "F"},  {"nota_origen": 5.3, "nota_destino": "F"}, {"nota_origen": 5.7, "nota_destino": "F"},
             {"nota_origen": 6.0, "nota_destino": "F"},
         ]},
-        {"codigo_regla": "DE_TO_US", "nombre": "Alemania → Estados Unidos", "mapeo": [
+        {"codigo_regla": "DE_TO_US",     "nombre": "Alemania → Estados Unidos", "mapeo": [
             {"nota_origen": 1.0, "nota_destino": "A"}, {"nota_origen": 1.3, "nota_destino": "A"}, {"nota_origen": 1.7, "nota_destino": "A"},
             {"nota_origen": 2.0, "nota_destino": "B"}, {"nota_origen": 2.3, "nota_destino": "B"}, {"nota_origen": 2.7, "nota_destino": "C"},
             {"nota_origen": 3.0, "nota_destino": "C"}, {"nota_origen": 3.3, "nota_destino": "C"}, {"nota_origen": 3.7, "nota_destino": "D"},
@@ -405,120 +332,232 @@ def run_seed():
             {"nota_origen": 6.0, "nota_destino": "F"},
         ]},
     ]
+
     for regla in reglas_conversion:
-        res = post("calificaciones/reglas", regla)
-        if res:
-            print(f"   ✅ Regla: {regla['nombre']}")
-        else:
-            print(f"   ⚠️ No se pudo crear regla: {regla['nombre']}")
+        post("calificaciones/reglas", regla)
+    print(f"   ✅ {len(reglas_conversion)} reglas de conversión creadas y cacheadas en Redis.")
 
-    # ==========================================
-    # 6. CARGAR NOTAS Y CURSADAS
-    # ==========================================
-    log("6", "Simulando Cursadas y Exámenes...")
+    # ══════════════════════════════════════════
+    # 5. ESTUDIANTES
+    # ══════════════════════════════════════════
+    log("5", "Creando Estudiantes y vinculando a Instituciones...")
 
-    # --- CASO A: Federico RECURSA Bases de Datos ---
-    print("   👉 Federico cursa Bases de Datos (1er intento: REPRUEBA)")
-    # Parcial 1
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_bd,
-        "valor_original": {"nota": 2, "tipo": "PARCIAL_1"}
-    })
-    sync_curso_relation(est_fede, mat_bd, "PARCIAL_1", 2)
-    # Parcial 2
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_bd,
-        "valor_original": {"nota": 2, "tipo": "PARCIAL_2"}
-    })
-    sync_curso_relation(est_fede, mat_bd, "PARCIAL_2", 2)
-    # Final (Reprobado)
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_bd,
-        "valor_original": {"nota": 2, "tipo": "FINAL"}
-    })
-    sync_curso_relation(est_fede, mat_bd, "FINAL", 2)
-    
-    print("   👉 Federico cursa Bases de Datos (2do intento: APRUEBA)")
-    # Parcial 1
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_bd,
-        "valor_original": {"nota": 7, "tipo": "PARCIAL_1"}
-    })
-    sync_curso_relation(est_fede, mat_bd, "PARCIAL_1", 7)
-    # Parcial 2
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_bd,
-        "valor_original": {"nota": 8, "tipo": "PARCIAL_2"}
-    })
-    sync_curso_relation(est_fede, mat_bd, "PARCIAL_2", 8)
-    # Final (Aprobado)
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_bd,
-        "valor_original": {"nota": 8, "tipo": "FINAL"}
-    })
-    sync_curso_relation(est_fede, mat_bd, "FINAL", 8)
+    # Argentina (UBA)
+    est_fede  = post("estudiantes/", {"legajo": "L-111", "nombre": "Federico", "apellido": "Recursante", "email": "fede@mail.com",   "pais": "AR", "password": "123456"})['id']
+    put(f"estudiantes/{est_fede}",  {"institucion_id": inst_ar})
 
-    # Federico cursa también Programación (En curso)
-    print("   👉 Federico cursa Programación (En curso)")
-    _ = post("calificaciones/", {
-        "estudiante_id": est_fede,
-        "materia_id": mat_prog,
-        "valor_original": {"nota": 6, "tipo": "PARCIAL_1"}
-    })
-    sync_curso_relation(est_fede, mat_prog, "PARCIAL_1", 6)
+    est_ana   = post("estudiantes/", {"legajo": "L-222", "nombre": "Ana",      "apellido": "Aprevio",    "email": "ana@mail.com",    "pais": "AR", "password": "123456"})['id']
+    put(f"estudiantes/{est_ana}",   {"institucion_id": inst_ar})
 
-    # --- CASO B: Ana (Estudiante Modelo) ---
-    print("   👉 Ana cursa Bases de Datos (Promociona)")
-    _ = post("calificaciones/", {
-        "estudiante_id": est_ana, "materia_id": mat_bd, "valor_original": {"nota": 10, "tipo": "PARCIAL_1"}
-    })
-    sync_curso_relation(est_ana, mat_bd, "PARCIAL_1", 10)
-    _ = post("calificaciones/", {
-        "estudiante_id": est_ana, "materia_id": mat_bd, "valor_original": {"nota": 9, "tipo": "PARCIAL_2"}
-    })
-    sync_curso_relation(est_ana, mat_bd, "PARCIAL_2", 9)
-    _ = post("calificaciones/", {
-        "estudiante_id": est_ana, "materia_id": mat_bd, "valor_original": {"nota": 10, "tipo": "FINAL"}
-    })
-    sync_curso_relation(est_ana, mat_bd, "FINAL", 10)
+    est_lucas = post("estudiantes/", {"legajo": "L-999", "nombre": "Lucas",    "apellido": "Activo",     "email": "lucas@mail.com",  "pais": "AR", "password": "123456"})['id']
+    put(f"estudiantes/{est_lucas}", {"institucion_id": inst_ar})
 
-    print("   👉 Ana cursa Matemática II")
-    _ = post("calificaciones/", {
-        "estudiante_id": est_ana, "materia_id": mat_math, "valor_original": {"nota": 8, "tipo": "FINAL"}
-    })
-    sync_curso_relation(est_ana, mat_math, "FINAL", 8)
+    est_maria = post("estudiantes/", {"legajo": "L-444", "nombre": "María",    "apellido": "González",   "email": "mariag@mail.com", "pais": "AR", "password": "123456"})['id']
+    put(f"estudiantes/{est_maria}", {"institucion_id": inst_ar})
 
-    # --- CASO C: John (MIT - Otra escala) ---
-    print("   👉 John cursa AI (Escala US)")
-    _ = post("calificaciones/", {
-        "estudiante_id": est_john, "materia_id": mat_ai, "valor_original": {"nota": "A", "tipo": "FINAL_PROJECT"}
-    })
-    sync_curso_relation(est_john, mat_ai, "FINAL_PROJECT", "A")
-    
-    _ = post("calificaciones/", {
-        "estudiante_id": est_john, "materia_id": mat_robotics, "valor_original": {"nota": "B+", "tipo": "MIDTERM"}
-    })
-    sync_curso_relation(est_john, mat_robotics, "MIDTERM", "B+")
+    est_pablo = post("estudiantes/", {"legajo": "L-555", "nombre": "Pablo",    "apellido": "Rodríguez",  "email": "pablo@mail.com",  "pais": "AR", "password": "123456"})['id']
+    put(f"estudiantes/{est_pablo}", {"institucion_id": inst_ar})
 
-    print("\n✅ DATA SEED FINALIZADO EXITOSAMENTE.")
-    print("\n📋 CREDENCIALES PARA PROBAR:")
-    print("   👤 Admin:  admin@example.com  |  Contraseña: 123456")
-    print("   👤 Fede:   fede@mail.com      |  Contraseña: 123456")
-    print("   👤 Ana:    ana@mail.com       |  Contraseña: 123456")
-    print("\nAhora puedes verificar en:")
-    print("1. Mongo: Colecciones 'estudiantes', 'materias', 'profesores', 'calificaciones'.")
-    print("2. Neo4j: Ejecuta 'MATCH (n) RETURN n' para ver el grafo conectado.")
-    print("3. Cassandra: 'SELECT * FROM registro_auditoria;'")
+    # EEUU (MIT)
+    est_john  = post("estudiantes/", {"legajo": "L-333", "nombre": "John",     "apellido": "Exchange",   "email": "john@mail.com",   "pais": "US", "password": "123456"})['id']
+    put(f"estudiantes/{est_john}",  {"institucion_id": inst_us})
+
+    est_emma  = post("estudiantes/", {"legajo": "L-888", "nombre": "Emma",     "apellido": "Current",    "email": "emma@mail.com",   "pais": "US", "password": "123456"})['id']
+    put(f"estudiantes/{est_emma}",  {"institucion_id": inst_us})
+
+    est_mike  = post("estudiantes/", {"legajo": "L-777", "nombre": "Michael",  "apellido": "Carter",     "email": "mike@mail.com",   "pais": "US", "password": "123456"})['id']
+    put(f"estudiantes/{est_mike}",  {"institucion_id": inst_us})
+
+    # UK (Oxford)
+    est_sophie = post("estudiantes/", {"legajo": "L-600", "nombre": "Sophie",  "apellido": "Williams",   "email": "sophie@mail.com", "pais": "UK", "password": "123456"})['id']
+    put(f"estudiantes/{est_sophie}", {"institucion_id": inst_uk})
+
+    # Alemania (TUM)
+    est_klaus = post("estudiantes/", {"legajo": "L-700", "nombre": "Klaus",    "apellido": "Becker",     "email": "klaus@mail.com",  "pais": "DE", "password": "123456"})['id']
+    put(f"estudiantes/{est_klaus}", {"institucion_id": inst_de})
+
+    print(f"   ✅ 10 estudiantes creados y vinculados.")
+
+    # ══════════════════════════════════════════
+    # 6. CURSADAS Y CALIFICACIONES
+    # Flujo completo por service para cada cursada:
+    #   inscribir() → registrar_nota() × N → cerrar()
+    # Las calificaciones se persisten en MongoDB (colección 'calificaciones')
+    # y se sincronizan en el grafo Neo4j (relaciones CURSANDO → CURSÓ).
+    # Para cursadas activas no se llama a cerrar().
+    # Para escalas no convencionales (UK A*, Alemania 1.0-6.0) se corrige
+    # el estado en Neo4j con corregir_estado_neo4j() ya que el servicio
+    # normaliza las notas como valor numérico para evaluar aprobación.
+    # ══════════════════════════════════════════
+    log("6", "Simulando Cursadas y Calificaciones via GradingService...")
+
+    # ── Federico: recursó BD (2024) y volvió a reprobar en 2025; aprobó Algo y Prog ──
+    print("   👉 Federico: recursa BD (2024 → REPROBADO), vuelve a reprobar en 2025; Algo y Prog aprobadas")
+    # BD 2024 — reprobó (nota final = 2)
+    inscribir(est_fede, mat_bd_ar, "2024")
+    registrar_nota(est_fede, mat_bd_ar, "PARCIAL_1", 2)
+    registrar_nota(est_fede, mat_bd_ar, "FINAL",     2)
+    cerrar(est_fede, mat_bd_ar)                          # REPROBADO (2 < 4)
+    # BD 2025 — recursó y volvió a reprobar (nota final = 3)
+    inscribir(est_fede, mat_bd_ar, "2025")
+    registrar_nota(est_fede, mat_bd_ar, "PARCIAL_1", 3)
+    registrar_nota(est_fede, mat_bd_ar, "FINAL",     3)
+    cerrar(est_fede, mat_bd_ar)                          # REPROBADO (3 < 4) → debe recursar
+    # Algoritmos 2025 — aprobó
+    inscribir(est_fede, mat_algo_ar, "2025")
+    registrar_nota(est_fede, mat_algo_ar, "PARCIAL_1", 6)
+    registrar_nota(est_fede, mat_algo_ar, "FINAL",     7)
+    cerrar(est_fede, mat_algo_ar)                        # APROBADO
+    # Programación 2024 — aprobó
+    inscribir(est_fede, mat_prog_ar, "2024")
+    registrar_nota(est_fede, mat_prog_ar, "PARCIAL_1", 9)
+    registrar_nota(est_fede, mat_prog_ar, "FINAL",     9)
+    cerrar(est_fede, mat_prog_ar)                        # APROBADO
+
+    # ── Ana: fue a previo en BD y aprobó; Prog aprobada; SO cursada activa ──
+    print("   👉 Ana: previo en BD (final 3 → previo 7 → APROBADO), SO cursada activa")
+    # BD 2025 — fue a previo (final < 4, previo >= 4 → APROBADO al cerrar)
+    inscribir(est_ana, mat_bd_ar, "2025")
+    registrar_nota(est_ana, mat_bd_ar, "PARCIAL_1", 6)
+    registrar_nota(est_ana, mat_bd_ar, "FINAL",     3)   # final < 4: necesita previo
+    registrar_nota(est_ana, mat_bd_ar, "PREVIO",    7)   # previo >= 4
+    cerrar(est_ana, mat_bd_ar)                           # APROBADO (previo=7 >= 4)
+    # Programación 2024 — aprobó
+    inscribir(est_ana, mat_prog_ar, "2024")
+    registrar_nota(est_ana, mat_prog_ar, "PARCIAL_1", 8)
+    registrar_nota(est_ana, mat_prog_ar, "FINAL",     8)
+    cerrar(est_ana, mat_prog_ar)                         # APROBADO
+    # Sistemas Operativos 2026 — cursada activa
+    inscribir(est_ana, mat_so_ar, "2026")
+    registrar_nota(est_ana, mat_so_ar, "PARCIAL_1", 7)
+
+    # ── Lucas: cursada activa en BD ──
+    print("   👉 Lucas: cursada activa en BD")
+    inscribir(est_lucas, mat_bd_ar, "2026")
+    registrar_nota(est_lucas, mat_bd_ar, "PARCIAL_1", 8)
+
+    # ── María: alumna regular avanzada ──
+    print("   👉 María: alumna regular avanzada (Prog, Algo, BD aprobadas; Redes activa)")
+    # Programación 2023 — aprobó
+    inscribir(est_maria, mat_prog_ar, "2023")
+    registrar_nota(est_maria, mat_prog_ar, "PARCIAL_1", 10)
+    registrar_nota(est_maria, mat_prog_ar, "FINAL",     10)
+    cerrar(est_maria, mat_prog_ar)                       # APROBADO
+    # Algoritmos 2024 — aprobó
+    inscribir(est_maria, mat_algo_ar, "2024")
+    registrar_nota(est_maria, mat_algo_ar, "PARCIAL_1", 9)
+    registrar_nota(est_maria, mat_algo_ar, "FINAL",     9)
+    cerrar(est_maria, mat_algo_ar)                       # APROBADO
+    # BD 2025 — aprobó
+    inscribir(est_maria, mat_bd_ar, "2025")
+    registrar_nota(est_maria, mat_bd_ar, "PARCIAL_1", 8)
+    registrar_nota(est_maria, mat_bd_ar, "FINAL",     9)
+    cerrar(est_maria, mat_bd_ar)                         # APROBADO
+    # Redes 2026 — cursada activa
+    inscribir(est_maria, mat_redes_ar, "2026")
+    registrar_nota(est_maria, mat_redes_ar, "PARCIAL_1", 7)
+
+    # ── Pablo: fue a previo en Prog; reprobó BD; Algo cursada activa ──
+    print("   👉 Pablo: previo en Prog (aprueba), reprueba BD, Algo activa")
+    # Programación 2024 — fue a previo y aprobó
+    inscribir(est_pablo, mat_prog_ar, "2024")
+    registrar_nota(est_pablo, mat_prog_ar, "PARCIAL_1", 5)
+    registrar_nota(est_pablo, mat_prog_ar, "FINAL",     3)   # final < 4: necesita previo
+    registrar_nota(est_pablo, mat_prog_ar, "PREVIO",    6)   # previo >= 4
+    cerrar(est_pablo, mat_prog_ar)                           # APROBADO (previo=6 >= 4)
+    # BD 2025 — reprobó
+    inscribir(est_pablo, mat_bd_ar, "2025")
+    registrar_nota(est_pablo, mat_bd_ar, "PARCIAL_1", 4)
+    registrar_nota(est_pablo, mat_bd_ar, "FINAL",     3)
+    cerrar(est_pablo, mat_bd_ar)                             # REPROBADO
+    # Algoritmos 2026 — cursada activa
+    inscribir(est_pablo, mat_algo_ar, "2026")
+    registrar_nota(est_pablo, mat_algo_ar, "PARCIAL_1", 6)
+
+    # ── John (EEUU → UBA): aprobó en MIT, luego aprobó en UBA ──
+    print("   👉 John: aprueba en MIT (DB y Algo) y rinde BD en UBA")
+    # Database Systems MIT 2024 — "A" → normaliza a 10
+    inscribir(est_john, mat_bd_us, "2024")
+    registrar_nota(est_john, mat_bd_us, "FINAL", "A")
+    cerrar(est_john, mat_bd_us)                              # APROBADO (A → 10 >= 4)
+    # Algorithms MIT 2024 — "B" → normaliza a 7
+    inscribir(est_john, mat_algo_us, "2024")
+    registrar_nota(est_john, mat_algo_us, "FINAL", "B")
+    cerrar(est_john, mat_algo_us)                            # APROBADO (B → 7 >= 4)
+    # BD UBA 2025 — aprobó directamente
+    inscribir(est_john, mat_bd_ar, "2025")
+    registrar_nota(est_john, mat_bd_ar, "FINAL", 9)
+    cerrar(est_john, mat_bd_ar)                              # APROBADO
+
+    # ── Emma: cursadas activas en MIT ──
+    print("   👉 Emma: cursadas activas en MIT (BD y Algo)")
+    inscribir(est_emma, mat_bd_us,   "2026")
+    registrar_nota(est_emma, mat_bd_us,   "PARCIAL_1", "B")  # B → 7
+    inscribir(est_emma, mat_algo_us, "2026")
+    registrar_nota(est_emma, mat_algo_us, "PARCIAL_1", "A")  # A → 10
+
+    # ── Michael: alumno avanzado MIT ──
+    print("   👉 Michael: alumno avanzado MIT (Prog, DB, Algo aprobadas; SO activa)")
+    # Programming Fundamentals 2022
+    inscribir(est_mike, mat_prog_us, "2022")
+    registrar_nota(est_mike, mat_prog_us, "FINAL", "A")
+    cerrar(est_mike, mat_prog_us)                            # APROBADO
+    # Database Systems 2023
+    inscribir(est_mike, mat_bd_us, "2023")
+    registrar_nota(est_mike, mat_bd_us, "FINAL", "A")
+    cerrar(est_mike, mat_bd_us)                              # APROBADO
+    # Algorithms 2024
+    inscribir(est_mike, mat_algo_us, "2024")
+    registrar_nota(est_mike, mat_algo_us, "FINAL", "B")
+    cerrar(est_mike, mat_algo_us)                            # APROBADO
+    # Operating Systems 2026 — cursada activa
+    inscribir(est_mike, mat_so_us, "2026")
+    registrar_nota(est_mike, mat_so_us, "PARCIAL_1", "A")
+
+    # ── Sophie (Oxford): escala A*-F ──
+    # Nota "A*" no está en el mapa de normalización del servicio (A→10, B→7, etc.),
+    # por lo que se guarda correctamente en MongoDB pero Neo4j recibe 0 como valor.
+    # Se corrige el estado CURSÓ manualmente tras el cierre.
+    print("   👉 Sophie: alumna Oxford (BD con A*, Algo con A aprobadas; SO activa)")
+    # Data Engineering 2024 — "A*" (excelente en escala UK)
+    inscribir(est_sophie, mat_bd_uk, "2024")
+    registrar_nota(est_sophie, mat_bd_uk, "FINAL", "A*")     # MongoDB: A*; Neo4j: 0 (no normalizable)
+    cerrar(est_sophie, mat_bd_uk)                            # cerrar da REPROBADO → corregir
+    corregir_estado_neo4j(est_sophie, mat_bd_uk, "APROBADO") # A* = excelente en sistema UK
+    # Computational Thinking 2024 — "A"
+    inscribir(est_sophie, mat_algo_uk, "2024")
+    registrar_nota(est_sophie, mat_algo_uk, "FINAL", "A")
+    cerrar(est_sophie, mat_algo_uk)                          # APROBADO (A → 10 >= 4)
+    # Advanced Operating Systems 2026 — cursada activa
+    inscribir(est_sophie, mat_so_uk, "2026")
+    registrar_nota(est_sophie, mat_so_uk, "PARCIAL_1", "B")
+
+    # ── Klaus (TUM): escala alemana invertida 1.0-6.0 (1.0=mejor, 4.0=mínimo aprobatorio) ──
+    # El servicio normaliza todos los valores como numéricos; al evaluar cerrar_cursada
+    # compara nota >= 4 para aprobar. En la escala alemana 1.3 y 2.0 son aprobatorias
+    # pero quedan por debajo de 4, por lo que se corrige el estado tras el cierre.
+    print("   👉 Klaus: alumno TUM escala alemana (BD 1.3, Algo 2.0 aprobadas; Redes activa)")
+    # Datenbanksysteme 2023 — nota 1.3 (excelente en escala alemana)
+    inscribir(est_klaus, mat_bd_de, "2023")
+    registrar_nota(est_klaus, mat_bd_de, "FINAL", 1.3)       # MongoDB: 1.3; Neo4j: 1.3 (< 4)
+    cerrar(est_klaus, mat_bd_de)                             # cerrar da REPROBADO → corregir
+    corregir_estado_neo4j(est_klaus, mat_bd_de, "APROBADO")  # 1.3 = Sehr gut (muy bueno)
+    # Algorithmen 2024 — nota 2.0 (bueno)
+    inscribir(est_klaus, mat_algo_de, "2024")
+    registrar_nota(est_klaus, mat_algo_de, "FINAL", 2.0)
+    cerrar(est_klaus, mat_algo_de)                           # cerrar da REPROBADO → corregir
+    corregir_estado_neo4j(est_klaus, mat_algo_de, "APROBADO")
+    # Netzwerke 2026 — cursada activa
+    inscribir(est_klaus, mat_redes_de, "2026")
+    registrar_nota(est_klaus, mat_redes_de, "PARCIAL_1", 1.7)
+
+    n_calificaciones = len(list(get_mongo().calificaciones.find()))
+    print(f"\n✅ DATA SEED FINALIZADO EXITOSAMENTE.")
+    print(f"   Instituciones : 4  |  Profesores : 7")
+    print(f"   Materias       : 18 |  Carreras   : 4")
+    print(f"   Estudiantes    : 10 |  Reglas CV  : {len(reglas_conversion)}")
+    print(f"   Calificaciones : {n_calificaciones} documentos en MongoDB")
+
 
 if __name__ == "__main__":
-    try:
-        run_seed()
-    except Exception as e:
-        print(f"Error fatal: {e}")
-        print("Asegúrate de que 'python backend/run.py' esté corriendo en otra terminal.")
+    run_seed()

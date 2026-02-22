@@ -104,7 +104,14 @@ const StudentDashboard = ({ user, onLogout, onUserUpdate }) => {
       const materiasAprobadas = historialData.filter(h => 
         h.estado === 'APROBADO' || h.estado === 'APROBADO (EQUIVALENCIA)' || (h.estado && h.estado.toString().startsWith('APROBADO'))
       );
-      const materiasReprobadas = historialData.filter(h => h.estado === 'REPROBADO');
+      const reprobadasMap = new Map();
+      historialData.filter(h => h.estado === 'REPROBADO').forEach(h => {
+        const key = h.materia_id || h.materia_nombre;
+        reprobadasMap.set(key, h);
+      });
+      const materiasReprobadas = Array.from(reprobadasMap.values()).filter(
+        h => !historialData.some(a => (a.materia_id || a.materia_nombre) === (h.materia_id || h.materia_nombre) && (a.estado === 'APROBADO' || (a.estado && a.estado.toString().startsWith('APROBADO'))))
+      );
       
       // Calcular promedio de notas finales
       const notasFinales = historialData
@@ -177,7 +184,14 @@ const StudentDashboard = ({ user, onLogout, onUserUpdate }) => {
     const materiasAprobadas = historial.filter(h => 
       h.estado === 'APROBADO' || h.estado === 'APROBADO (EQUIVALENCIA)' || (h.estado && h.estado.toString().startsWith('APROBADO'))
     );
-    const materiasReprobadas = historial.filter(h => h.estado === 'REPROBADO');
+    const reprobadasMap = new Map();
+    historial.filter(h => h.estado === 'REPROBADO').forEach(h => {
+      const key = h.materia_id || h.materia_nombre;
+      reprobadasMap.set(key, h);
+    });
+    const materiasReprobadas = Array.from(reprobadasMap.values()).filter(
+      h => !historial.some(a => (a.materia_id || a.materia_nombre) === (h.materia_id || h.materia_nombre) && (a.estado === 'APROBADO' || (a.estado && a.estado.toString().startsWith('APROBADO'))))
+    );
 
     return (
       <div className="dashboard-main">

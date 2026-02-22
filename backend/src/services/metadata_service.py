@@ -5,8 +5,7 @@ class MetadataService:
     def save_metadata(entity_type, entity_id, estado="ACTIVO"):
         """
         Registra el estado de cualquier entidad (estudiante, profesor) en Cassandra.
-        Se usa en create/delete para dejar un rastro de auditoría sin acoplar
-        esa lógica al modelo principal de MongoDB.
+        Se usa en create/delete para dejar un rastro de auditoría
         """
         session = get_cassandra()
         if session:

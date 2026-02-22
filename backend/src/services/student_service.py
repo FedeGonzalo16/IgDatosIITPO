@@ -4,6 +4,7 @@ from datetime import datetime
 from src.services.metadata_service import MetadataService
 
 class StudentService:
+    # Creamos un estudiante
     @staticmethod
     def create(data):
         db = get_mongo()
@@ -15,13 +16,14 @@ class StudentService:
             "activo": True,
             "metadata": {"estado": "ACTIVO"}
         }
+        # Insertamos el estudiante en Mongo
         res = db.estudiantes.insert_one(doc)
         mongo_id = str(res.inserted_id)
 
         # Estado inicial del estudiante queda registrado en Cassandra por separado
         MetadataService.save_metadata('estudiante', mongo_id, 'ACTIVO')
 
-        # El nodo en Neo4j es necesario para poder construir las relaciones académicas
+        # El nodo en Neo4j para poder construir las relaciones académicas
         with get_neo4j() as session:
             session.run("""
                 MERGE (e:Estudiante {id_mongo: $id}) 
@@ -30,10 +32,10 @@ class StudentService:
         
         return mongo_id
 
+    # Obtenemos todos los estudiantes
     @staticmethod
     def get_all():
         db = get_mongo()
-        # La condición OR cubre documentos creados antes de que se estandarizara el campo metadata
         students = list(db.estudiantes.find({
             "$or": [
                 {"metadata.estado": "ACTIVO"},
@@ -45,17 +47,19 @@ class StudentService:
         
         # La institución de cada estudiante vive en Neo4j (relación PERTENECE_A),
         # así que necesitamos enriquecer cada documento con un query al grafo.
+        # Obtenemos la institución de cada estudiante en el grafo
         with get_neo4j() as session:
             for s in students:
                 s['_id'] = str(s['_id'])
                 try:
+                    # Obtenemos la institución de cada estudiante en el grafo
                     result = session.run("""
                         MATCH (e:Estudiante {id_mongo: $uid})-[:PERTENECE_A]->(i:Institucion)
                         RETURN i.id_mongo AS institucion_id, 
                                i.nombre AS institucion_nombre, 
                                i.codigo AS institucion_codigo
                     """, uid=s['_id'])
-                    
+                    # Obtenemos el registro de la institución
                     record = result.single()
                     if record:
                         s['institucion_id']     = record['institucion_id']
@@ -69,21 +73,26 @@ class StudentService:
                     
         return students
 
+    # Obtenemos un estudiante por su id
     @staticmethod
     def get_by_id(uid):
         db = get_mongo()
+        # Obtenemos el estudiante en Mongo
         s = db.estudiantes.find_one({"_id": ObjectId(uid)})
         
         if s: 
             s['_id'] = str(s['_id'])
             try:
+                # Obtenemos la institución de cada estudiante en el grafo
                 with get_neo4j() as session:
                     result = session.run("""
                         MATCH (e:Estudiante {id_mongo: $uid})-[:PERTENECE_A]->(i:Institucion)
                         RETURN i.id_mongo AS institucion_id, i.nombre AS institucion_nombre, i.codigo AS institucion_codigo
                     """, uid=uid)
+                    # Obtenemos el registro de la institución
                     record = result.single()
                     if record:
+                        # Asignamos los datos de la institución
                         s['institucion_id']     = record['institucion_id']
                         s['institucion_nombre'] = record['institucion_nombre']
                         s['institucion_codigo'] = record['institucion_codigo']
@@ -92,11 +101,13 @@ class StudentService:
                 
         return s
 
+    # Actualizamos un estudiante
     @staticmethod
     def update(uid, data):
         db = get_mongo()
+        # Actualizamos el estudiante en Mongo
         db.estudiantes.update_one({"_id": ObjectId(uid)}, {"$set": data})
-        
+        # Actualizamos el estudiante en el grafo
         with get_neo4j() as session:
             if 'nombre' in data or 'apellido' in data:
                 session.run("""
@@ -116,6 +127,7 @@ class StudentService:
                 """, est_id=uid, new_inst_id=inst_id)
         return True
 
+    # Eliminamos un estudiante
     @staticmethod
     def delete(uid):
         db = get_mongo()
@@ -125,28 +137,33 @@ class StudentService:
             session.run("MATCH (e:Estudiante {id_mongo: $id}) DETACH DELETE e", id=uid)
         return True
 
+    # Obtenemos un estudiante por su email
     @staticmethod
     def get_by_email(email):
         db = get_mongo()
+        # Obtenemos el estudiante en Mongo
         student = db.estudiantes.find_one({"email": email})
         if not student:
             return None
         student['_id'] = str(student['_id'])
-        # Misma lógica que get_by_id: completamos con la institución desde Neo4j
-        # Esto es importante porque el frontend guarda este objeto en localStorage al hacer login
+        # Completamos con la institución desde Neo4j para el frontend porque el se guarda este objeto en localStorage al hacer login
         try:
             with get_neo4j() as session:
+                # Obtenemos la institución de cada estudiante en el grafo
                 result = session.run("""
                     MATCH (e:Estudiante {id_mongo: $uid})-[:PERTENECE_A]->(i:Institucion)
                     RETURN i.id_mongo AS institucion_id,
                            i.nombre   AS institucion_nombre,
                            i.codigo   AS institucion_codigo
                 """, uid=student['_id'])
+                # Obtenemos el registro de la institución
                 record = result.single()
+                # Asignamos los datos de la institución
                 if record:
                     student['institucion_id']     = record['institucion_id']
                     student['institucion_nombre'] = record['institucion_nombre']
                     student['institucion_codigo'] = record['institucion_codigo']
+                # Si no se encontró la institución, asignamos None
                 else:
                     student['institucion_id']     = None
                     student['institucion_nombre'] = None
@@ -154,21 +171,23 @@ class StudentService:
             print(f"⚠️ Warning: No se pudo obtener la institución para el alumno {student['_id']}: {e}")
         return student
     
+    # Cambiamos la institución de un estudiante
     @staticmethod
     def cambiar_institucion(estudiante_id, nueva_institucion_id, regla_conversion_codigo):
         """
         Traslada al estudiante de institución, homologa materias aprobadas y
-        convierte las notas según la regla indicada. Es la operación más compleja del sistema.
+        convierte las notas según la regla indicada. 
         
         Flujo:
-          1. Leer regla de conversión (MongoDB)
-          2. Buscar materias aprobadas con equivalencias en la nueva institución (Neo4j)
-          3. Aplicar conversión de notas y registrar en Neo4j y MongoDB
-          4. Mover la relación PERTENECE_A al nuevo nodo de institución (Neo4j)
-          5. Auditoría en Cassandra
+          1. Leemos la regla de conversión (MongoDB)
+          2. Buscamos materias aprobadas con equivalencias en la nueva institución (Neo4j)
+          3. Aplicamos la conversión de notas y registramos en Neo4j y MongoDB
+          4. Movemos la relación PERTENECE_A al nuevo nodo de institución (Neo4j)
+          5. Registramos la auditoría en Cassandra
         """
         db = get_mongo()
         materias_homologadas = []
+        # Obtenemos la regla de conversión
         
         regla = db.reglas_conversion.find_one({"codigo_regla": regla_conversion_codigo})
         
@@ -189,9 +208,11 @@ class StudentService:
                        mat_destino.id_mongo AS id_mat_destino,
                        mat_destino.nombre AS materia_destino
             """
+            # Obtenemos las equivalencias
             equivalencias = session.run(equiv_query, est_id=estudiante_id, new_inst_id=nueva_institucion_id).data()
             
             # Usamos un set para evitar procesar el mismo par (origen, destino) más de una vez
+            # para evitar procesar el mismo par (origen, destino) más de una vez
             procesados = set()
             for eq in equivalencias:
                 clave = (str(eq['id_mat_origen']), str(eq['id_mat_destino']))
@@ -202,22 +223,25 @@ class StudentService:
                 nota_convertida = nota_origen  # Fallback si la nota no tiene mapeo en la regla
                 
                 # Intentamos convertir la nota usando el mapeo de la regla.
-                # Soporta comparación numérica y por string (para escalas de letras).
                 if regla and 'mapeo' in regla:
                     for mapeo in regla['mapeo']:
                         coincide = str(mapeo['nota_origen']) == str(nota_origen)
+                        # Si no coincide, intentamos convertir la nota usando el mapeo de la regla.
                         if not coincide:
                             try:
+                                # Intentamos convertir la nota usando el mapeo de la regla.
                                 coincide = (
                                     isinstance(nota_origen, (int, float)) and
                                     float(mapeo['nota_origen']) == float(nota_origen)
                                 )
                             except (ValueError, TypeError):
                                 coincide = False
+                        # Si coincide, asignamos la nota convertida.
                         if coincide:
                             nota_convertida = mapeo['nota_destino']
                             break
                 
+                # Obtenemos la fecha de conversión
                 fecha_conv = datetime.utcnow()
 
                 # Si ya existe una equivalencia previa para esta materia destino, la actualizamos.
@@ -227,9 +251,12 @@ class StudentService:
                     RETURN r.estado AS estado
                 """, est_id=estudiante_id, id_mat_destino=eq['id_mat_destino']).single()
 
+                # Si existe una equivalencia previa para esta materia destino, la actualizamos.
                 if existe_row:
+                    # Si la equivalencia previa no es APROBADO (EQUIVALENCIA), la ignoramos.
                     if existe_row['estado'] != 'APROBADO (EQUIVALENCIA)':
                         continue
+                    # Actualizamos la equivalencia previa.
                     session.run("""
                         MATCH (e:Estudiante {id_mongo: $est_id})-[r:CURSÓ]->(mat_destino:Materia {id_mongo: $id_mat_destino})
                         WHERE r.estado = 'APROBADO (EQUIVALENCIA)'
@@ -244,6 +271,7 @@ class StudentService:
                          regla=regla_conversion_codigo, materia_origen_id=eq['id_mat_origen'],
                          materia_origen_nombre=eq['materia_origen'], fecha_conv=fecha_conv.isoformat())
                 else:
+                    # Creamos una nueva equivalencia.
                     session.run("""
                         MATCH (e:Estudiante {id_mongo: $est_id}), (mat_destino:Materia {id_mongo: $id_mat_destino})
                         CREATE (e)-[r:CURSÓ {
@@ -290,28 +318,30 @@ class StudentService:
                     upsert=True
                 )
                 
+                # Agregamos la materia homologada a la lista
                 materias_homologadas.append({
                     "materia": eq['materia_destino'],
                     "nota_original": nota_origen,
                     "nota_convertida": nota_convertida
                 })
 
-            # Verificamos existencia de ambos nodos antes de ejecutar el movimiento,
-            # para dar un error claro en lugar de un fallo silencioso.
+            # Verificamos existencia de ambos nodos antes de ejecutar el movimiento
             est_id_str     = str(estudiante_id).strip()
             new_inst_id_str = str(nueva_institucion_id).strip()
             
+            # Verificamos existencia del estudiante
             check_est = session.run("MATCH (e:Estudiante {id_mongo: $id}) RETURN e", id=est_id_str).single()
             if not check_est:
                 raise ValueError(f"Error Neo4j: No se encontró al estudiante con ID '{est_id_str}'")
-                
+            # Verificamos existencia de la institución
             check_inst = session.run("MATCH (i:Institucion {id_mongo: $id}) RETURN i.nombre AS nombre", id=new_inst_id_str).single()
             if not check_inst:
                 raise ValueError(f"Error Neo4j: No se encontró la institución con ID '{new_inst_id_str}'")
                 
+            # Obtenemos el nombre de la nueva institución
             nombre_nueva_inst = check_inst['nombre']
 
-            # Borramos PERTENECE_A anterior (OPTIONAL para no fallar si no existía) y creamos la nueva
+            # Borramos PERTENECE_A anterior y creamos la nueva
             res_update = session.run("""
                 MATCH (e:Estudiante {id_mongo: $est_id})
                 OPTIONAL MATCH (e)-[r:PERTENECE_A]->()
@@ -327,11 +357,13 @@ class StudentService:
                 
             print(f"✅ ÉXITO GRAFO: Estudiante movido a la institución {nombre_nueva_inst}")
 
-        # Cassandra registra el evento del traslado (auditoría inmutable)
+        # Cassandra registra el evento del cambio de institución
         try:
+            # Obtenemos la sesión de Cassandra
             cass = get_cassandra()
             if cass:
                 mensaje_auditoria = f"Traslado a inst {nueva_institucion_id}. Homologadas {len(materias_homologadas)} materias bajo regla {regla_conversion_codigo}."
+                # Registramos el evento del cambio de institución en Cassandra
                 cass.execute("""
                     INSERT INTO registro_auditoria (id_estudiante, fecha_creacion, id_auditoria, tipo_accion, nota_original)
                     VALUES (%s, toTimestamp(now()), uuid(), %s, %s)

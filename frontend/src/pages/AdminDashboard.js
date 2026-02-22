@@ -249,7 +249,6 @@ const AdminDashboard = ({ user, onLogout }) => {
             <th>Email</th>
             <th>Estado</th>
             <th>Institución</th>
-            <th>Promedio</th>
           </tr>
         </thead>
         <tbody>
@@ -260,7 +259,6 @@ const AdminDashboard = ({ user, onLogout }) => {
               <td>{student.email}</td>
               <td><span className={`status-badge ${(student.estado || 'activo').toLowerCase()}`}>{student.estado || 'ACTIVO'}</span></td>
               <td>{student.institucion}</td>
-              <td><strong>{student.promedio}</strong></td>
             </tr>
           ))}
         </tbody>

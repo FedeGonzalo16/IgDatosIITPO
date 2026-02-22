@@ -19,8 +19,10 @@ class ProfessorService:
         res = db.profesores.insert_one(doc)
         mongo_id = str(res.inserted_id)
 
+        # Guardamos el estado del profesor en Cassandra
         MetadataService.save_metadata('profesor', mongo_id, 'ACTIVO')
 
+        # Creamos el nodo Profesor en Neo4j
         with get_neo4j() as session:
             session.run("""
                 MERGE (p:Profesor {id_mongo: $id})
@@ -31,6 +33,7 @@ class ProfessorService:
             
         return mongo_id
 
+    # Asignamos una materia a un profesor
     @staticmethod
     def asignar_materia(prof_id, mat_id, activo=True):
         """
@@ -58,6 +61,7 @@ class ProfessorService:
                 
         return True
 
+    # Obtenemos todos los profesores
     @staticmethod
     def get_all():
         db = get_mongo()
@@ -66,6 +70,7 @@ class ProfessorService:
             p['_id'] = str(p['_id'])
         return profesores
 
+    # Obtenemos un profesor por su id
     @staticmethod
     def get_by_id(uid):
         db = get_mongo()
@@ -74,6 +79,7 @@ class ProfessorService:
             prof['_id'] = str(prof['_id'])
         return prof
 
+    # Obtenemos un profesor por su email
     @staticmethod
     def get_by_email(email):
         db = get_mongo()
@@ -82,6 +88,7 @@ class ProfessorService:
             prof['_id'] = str(prof['_id'])
         return prof
 
+    # Obtenemos las materias que dicta un profesor
     @staticmethod
     def get_materias_by_profesor(prof_id):
         """Obtiene las materias que dicta actualmente (relación DICTAN en Neo4j)."""
@@ -92,11 +99,12 @@ class ProfessorService:
             """, pid=prof_id)
             return [{"materia_id": r["materia_id"], "nombre": r["nombre"], "codigo": r["codigo"]} for r in result]
 
+    # Obtenemos los alumnos que están cursando una materia
     @staticmethod
     def get_alumnos_by_materia(mat_id):
         """
         Devuelve los alumnos que están cursando una materia junto con sus notas parciales.
-        Útil para que el profesor vea el estado del aula en tiempo real.
+        Esto, para que el profesor vea el estado del aula en tiempo real.
         """
         with get_neo4j() as session:
             result = session.run("""
@@ -121,6 +129,7 @@ class ProfessorService:
                 })
             return alumnos
 
+    # Actualizamos un profesor
     @staticmethod
     def update(uid, data):
         db = get_mongo()
@@ -130,8 +139,10 @@ class ProfessorService:
         if 'legajo_docente' in data: update_data['legajo_docente'] = data['legajo_docente']
         if 'especialidad'  in data: update_data['especialidad']  = data['especialidad']
         
+        # Actualizamos el profesor en Mongo
         db.profesores.update_one({"_id": ObjectId(uid)}, {"$set": update_data})
         
+        # Actualizamos el profesor en Neo4j
         with get_neo4j() as session:
             session.run("""
                 MATCH (p:Profesor {id_mongo: $id})
@@ -141,6 +152,7 @@ class ProfessorService:
                 legajo=data.get('legajo_docente', ''))
         return True
 
+    # Eliminamos un profesor
     @staticmethod
     def delete(uid):
         db = get_mongo()
